@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sellthru</title>
+    <!-- Pre-paint theme before the app loads to avoid a flash of the wrong theme.
+         Resolution order: saved preference -> system preference -> light (default). -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('fiq-theme') // 'light' | 'dark' | 'system'
+          var mode = stored || 'system'
+          var resolved =
+            mode === 'system'
+              ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+              : mode
+          if (resolved === 'dark') document.documentElement.classList.add('dark')
+        } catch (e) {}
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

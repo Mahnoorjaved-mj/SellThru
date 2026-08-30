@@ -1,0 +1,69 @@
+/* Design tokens — see build brief Section 3.3. Light is the default theme;
+   `.dark` on <html> overrides. Never hardcode a colour outside this file. */
+
+:root {
+  --color-bg: #ffffff;
+  --color-bg-muted: #f5f6f8; /* app shell, table header, page background */
+  --color-surface: #ffffff; /* cards, panels */
+  --color-surface-hover: #f2f4f7;
+  --color-border: #e1e4e9; /* hairlines */
+  --color-border-strong: #c8cdd5; /* inputs, dividers that must read */
+  --color-text: #12161c;
+  --color-text-secondary: #4e5763;
+  --color-text-tertiary: #79828f; /* labels, units, axis ticks */
+  --color-accent: #1d4ed8;
+  --color-accent-hover: #1740ae;
+  --color-accent-soft: #eaf0fe; /* selected row, active nav */
+  --color-positive: #0e7c4a;
+  --color-negative: #b42318;
+  --color-warning: #b45309;
+  --color-overlay: rgba(17, 22, 28, 0.45);
+
+  /* Badge/pill backgrounds: semantic colour tinted to ~10%, per Section 3.5 */
+  --color-positive-soft: color-mix(in srgb, var(--color-positive) 10%, var(--color-surface));
+  --color-negative-soft: color-mix(in srgb, var(--color-negative) 10%, var(--color-surface));
+  --color-warning-soft: color-mix(in srgb, var(--color-warning) 10%, var(--color-surface));
+
+  /* Chart series (max 5, in this order) */
+  --chart-series-1: #1d4ed8;
+  --chart-series-2: #0f766e;
+  --chart-series-3: #b45309;
+  --chart-series-4: #64748b;
+  --chart-series-5: #9a3412;
+
+  --radius-control: 4px; /* inputs, buttons, badges */
+  --radius-panel: 6px; /* panels, cards */
+
+  --shadow-elevated: 0 8px 24px rgba(16, 22, 30, 0.12); /* dropdowns, modals, toasts only */
+}
+
+.dark {
+  --color-bg: #0d1117;
+  --color-bg-muted: #11161d;
+  --color-surface: #151b23;
+  --color-surface-hover: #1b222b;
+  --color-border: #232b36;
+  --color-border-strong: #323c49;
+  --color-text: #e7ecf3;
+  --color-text-secondary: #a2adbb;
+  --color-text-tertiary: #717d8b;
+  --color-accent: #5b8def;
+  --color-accent-hover: #7aa4f5;
+  --color-accent-soft: #16233a;
+  --color-positive: #35a16b;
+  --color-negative: #e5544b;
+  --color-warning: #d08a2c;
+  --color-overlay: rgba(0, 0, 0, 0.6);
+
+  --color-positive-soft: color-mix(in srgb, var(--color-positive) 16%, var(--color-surface));
+  --color-negative-soft: color-mix(in srgb, var(--color-negative) 16%, var(--color-surface));
+  --color-warning-soft: color-mix(in srgb, var(--color-warning) 16%, var(--color-surface));
+
+  --chart-series-1: #5b8def;
+  --chart-series-2: #2da898;
+  --chart-series-3: #d9963c;
+  --chart-series-4: #94a3b8;
+  --chart-series-5: #e07b54;
+
+  --shadow-elevated: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
