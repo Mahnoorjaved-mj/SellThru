@@ -42,6 +42,68 @@ import {
 } from '../lib/chartTheme'
 import { formatCurrency } from '../lib/format'
 
+/* =========================================================
+   DASHBOARD CACHE
+   ========================================================= */
+
+const DASHBOARD_CACHE_VERSION = 'v4'
+const DASHBOARD_CACHE_TTL = 2 * 60 * 1000
+
+const ACTUAL_COLOR = '#475569'
+const FORECAST_COLOR = '#94A3B8'
+
+function getDashboardCacheKey(user, days) {
+  const scope =
+    user?._id ||
+    user?.id ||
+    user?.email ||
+    'anonymous'
+
+  return `sellthru:dashboard:${DASHBOARD_CACHE_VERSION}:${scope}:${days}`
+}
+
+function readDashboardCache(user, days) {
+  try {
+    const raw = localStorage.getItem(
+      getDashboardCacheKey(user, days)
+    )
+
+    if (!raw) {
+      return null
+    }
+
+    const cached = JSON.parse(raw)
+
+    if (!cached?.data) {
+      return null
+    }
+
+    return {
+      ...cached,
+      isFresh:
+        Date.now() - cached.savedAt <
+        DASHBOARD_CACHE_TTL
+    }
+  } catch {
+    return null
+  }
+}
+
+function writeDashboardCache(user, days, data) {
+  try {
+    localStorage.setItem(
+      getDashboardCacheKey(user, days),
+      JSON.stringify({
+        data,
+        savedAt: Date.now()
+      })
+    )
+  } catch {
+    // Cache is optional.
+    // Never break dashboard if localStorage is unavailable.
+  }
+}
+
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -52,15 +114,6 @@ ChartJS.register(
   Filler
 )
 
-/*
- * Neutral / professional dashboard palette
- *
- * Actual Sales  -> Slate
- * AI Forecast   -> Soft Gray
- */
-const DASHBOARD_ACCENT = '#475569'
-const DASHBOARD_FORECAST = '#94A3B8'
-
 export default function Dashboard() {
   const {
     user,
@@ -69,55 +122,143 @@ export default function Dashboard() {
     toast
   } = useApp()
 
-  const [loading, setLoading] = useState(true)
-  const [data, setData] = useState(null)
-  const [seeding, setSeeding] = useState(false)
-  const [days, setDays] = useState(30)
+  /*
+   * Read cached 30-day dashboard immediately.
+   * This prevents the dashboard from showing a long
+   * loading skeleton on every visit.
+   */
+  const initialCache =
+    readDashboardCache(user, 30)
 
-  const [hiddenSeries, setHiddenSeries] = useState(
-    () => new Set()
+  const [loading, setLoading] = useState(
+    !initialCache?.data
   )
 
-  const chartRef = useRef(null)
-  const tokens = useChartTheme()
+  const [data, setData] = useState(
+    initialCache?.data || null
+  )
 
-  /*
-   * Load dashboard data from the existing backend.
-   * No other pages or APIs are changed.
-   */
+  const [seeding, setSeeding] =
+    useState(false)
+
+  const [days, setDays] =
+    useState(30)
+
+  const [hiddenSeries, setHiddenSeries] =
+    useState(() => new Set())
+
+  const chartRef =
+    useRef(null)
+
+  const tokens =
+    useChartTheme()
+
+  /* =========================================================
+     LOAD DASHBOARD
+     ========================================================= */
+
   const loadData = useCallback(
-    async (rangeDays) => {
-      setLoading(true)
+    async (
+      rangeDays,
+      { background = false } = {}
+    ) => {
+      const cached =
+        readDashboardCache(
+          user,
+          rangeDays
+        )
+
+      /*
+       * If cached data exists,
+       * display it immediately.
+       */
+      if (cached?.data) {
+        setData(cached.data)
+        setLoading(false)
+      } else if (!background) {
+        setLoading(true)
+      }
 
       try {
-        const response = await getDashboardSummary(rangeDays)
+        /*
+         * Existing backend API.
+         * No API contract has been changed.
+         */
+        const res =
+          await getDashboardSummary(
+            rangeDays
+          )
 
-        setData(response)
-      } catch (error) {
-        toast(
-          error?.message || 'Unable to load dashboard data.',
-          'error'
-        )
-      } finally {
+        /*
+         * Replace cached data with
+         * fresh backend data.
+         */
+        setData(res)
         setLoading(false)
+
+        writeDashboardCache(
+          user,
+          rangeDays,
+          res
+        )
+      } catch (err) {
+        setLoading(false)
+
+        /*
+         * If cached data exists, keep
+         * showing it instead of blanking
+         * the dashboard.
+         */
+        if (!cached?.data) {
+          toast(
+            err?.message ||
+              'Unable to load dashboard data.',
+            'error'
+          )
+        }
       }
     },
-    [getDashboardSummary, toast]
+    [
+      getDashboardSummary,
+      toast,
+      user
+    ]
   )
 
   /*
-   * Reload whenever the selected date range changes.
+   * Load cached data first and then
+   * refresh it in the background.
    */
   useEffect(() => {
-    loadData(days)
-  }, [loadData, days])
+    const cached =
+      readDashboardCache(
+        user,
+        days
+      )
 
-  /*
-   * Demo data remains available through the existing
-   * seed function. This does not affect other pages.
-   */
+    if (cached?.data) {
+      setData(cached.data)
+      setLoading(false)
+    }
+
+    loadData(days, {
+      background:
+        Boolean(cached?.data)
+    })
+  }, [
+    loadData,
+    days,
+    user
+  ])
+
+  /* =========================================================
+     DEMO DATA
+     ========================================================= */
+
   const handleSeed = async () => {
-    if (seeding) return
+    if (seeding) {
+      return
+    }
 
     setSeeding(true)
 
@@ -127,17 +268,19 @@ export default function Dashboard() {
         'info'
       )
 
-      const response = await seedSalesData()
+      const res =
+        await seedSalesData()
 
       toast(
-        response.message,
+        res.message,
         'success'
       )
 
       await loadData(days)
-    } catch (error) {
+    } catch (err) {
       toast(
-        error?.message || 'Unable to generate demo data.',
+        err?.message ||
+          'Unable to generate demo data.',
         'error'
       )
     } finally {
@@ -145,12 +288,14 @@ export default function Dashboard() {
     }
   }
 
-  /*
-   * Toggle Actual / Forecast visibility.
-   */
+  /* =========================================================
+     SERIES TOGGLE
+     ========================================================= */
+
   const toggleSeries = (label) => {
-    setHiddenSeries((previous) => {
-      const next = new Set(previous)
+    setHiddenSeries((prev) => {
+      const next =
+        new Set(prev)
 
       if (next.has(label)) {
         next.delete(label)
@@ -162,79 +307,132 @@ export default function Dashboard() {
     })
   }
 
-  /*
-   * Chart legend configuration.
-   */
+  /* =========================================================
+     CHART LEGEND
+     ========================================================= */
+
   const seriesMeta = useMemo(
     () => [
       {
         label: 'Actual Sales',
-        color: DASHBOARD_ACCENT,
+        color: ACTUAL_COLOR,
         dashed: false
       },
       {
         label: 'AI Forecast',
-        color: DASHBOARD_FORECAST,
+        color: FORECAST_COLOR,
         dashed: true
       }
     ],
     []
   )
 
-  /*
-   * Professional external tooltip.
-   */
-  const externalTooltip = useMemo(
-    () =>
-      createExternalTooltipHandler({
-        formatValue: (value) =>
-          formatCurrency(value, {
-            compact: true
-          })
-      }),
-    []
-  )
+  const externalTooltip =
+    useMemo(
+      () =>
+        createExternalTooltipHandler({
+          formatValue: (value) =>
+            formatCurrency(
+              value,
+              {
+                compact: true
+              }
+            )
+        }),
+      []
+    )
 
-  /*
-   * Loading state
-   */
+  /* =========================================================
+     INITIAL LOADING
+     ========================================================= */
+
   if (loading) {
     return (
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {Array.from({ length: 3 }).map((_, index) => (
+      <div
+        className="
+          grid
+          grid-cols-1
+          gap-4
+          sm:grid-cols-2
+          lg:grid-cols-3
+        "
+      >
+        {Array.from({
+          length: 3
+        }).map((_, i) => (
           <SkeletonPanel
-            key={index}
+            key={i}
             rows={2}
           />
         ))}
 
-        <div className="sm:col-span-2 lg:col-span-3">
+        <div
+          className="
+            sm:col-span-2
+            lg:col-span-3
+          "
+        >
           <SkeletonPanel rows={5} />
         </div>
       </div>
     )
   }
 
-  /*
-   * Empty database / first-use state.
-   */
-  if (!data || data.status === 'empty') {
+  /* =========================================================
+     EMPTY DATA
+     ========================================================= */
+
+  if (
+    !data ||
+    data.status === 'empty'
+  ) {
     return (
-      <div className="max-w-2xl mx-auto mt-12">
-        <div className="ss-card p-8 flex flex-col items-start">
+      <div
+        className="
+          max-w-2xl
+          mx-auto
+          mt-12
+        "
+      >
+        <div
+          className="
+            ss-card
+            p-8
+            flex
+            flex-col
+            items-start
+          "
+        >
           <EmptyState
             icon={Sparkles}
             title="No sales data yet"
-            description="Upload your historical transactions via a CSV sheet, or seed demo data to preview the analytics dashboard and AI predictions."
+            description="
+              Upload your historical transactions
+              via a CSV sheet, or seed demo data
+              to preview the analytics dashboard
+              and AI predictions.
+            "
           />
 
-          <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+          <div
+            className="
+              flex
+              flex-col
+              sm:flex-row
+              gap-2
+              w-full
+              sm:w-auto
+            "
+          >
             <Link
               to="/data"
               className="ss-btn px-4"
             >
               <Database size={15} />
-              <span>Go to data manager</span>
+
+              <span>
+                Go to data manager
+              </span>
             </Link>
 
             {user?.is_admin && (
@@ -261,35 +459,31 @@ export default function Dashboard() {
     recent_transactions
   } = data
 
-  /*
-   * ------------------------------------------
-   * SALES HISTORY
-   * ------------------------------------------
-   */
-  const chartLabels = history_chart.map(
-    (item) => item.date
-  )
+  /* =========================================================
+     CHART DATA
+     ========================================================= */
 
-  const actualValues = history_chart.map(
-    (item) => item.actual
-  )
+  const chartLabels =
+    history_chart.map(
+      (item) => item.date
+    )
 
-  const forecastValues = history_chart.map(
-    (item) => item.forecast
-  )
+  const actualValues =
+    history_chart.map(
+      (item) => item.actual
+    )
 
-  /*
-   * Find the boundary between actual
-   * historical data and forecast data.
-   */
+  const forecastValues =
+    history_chart.map(
+      (item) => item.forecast
+    )
+
   const boundaryIndex =
     history_chart.filter(
-      (item) => item.actual !== null
+      (item) =>
+        item.actual !== null
     ).length - 1
 
-  /*
-   * Chart data
-   */
   const historyData = {
     labels: chartLabels,
 
@@ -300,10 +494,12 @@ export default function Dashboard() {
         data: actualValues,
 
         hidden:
-          hiddenSeries.has('Actual Sales'),
+          hiddenSeries.has(
+            'Actual Sales'
+          ),
 
         ...lineSeriesStyle(
-          DASHBOARD_ACCENT
+          ACTUAL_COLOR
         )
       },
 
@@ -313,10 +509,12 @@ export default function Dashboard() {
         data: forecastValues,
 
         hidden:
-          hiddenSeries.has('AI Forecast'),
+          hiddenSeries.has(
+            'AI Forecast'
+          ),
 
         ...lineSeriesStyle(
-          DASHBOARD_FORECAST,
+          FORECAST_COLOR,
           {
             dashed: true
           }
@@ -325,56 +523,65 @@ export default function Dashboard() {
     ]
   }
 
-  /*
-   * Chart options
-   */
-  const historyOptions = baseChartOptions(
-    tokens,
-    {
-      extend: {
-        plugins: {
-          legend: {
-            display: false
-          },
+  const historyOptions =
+    baseChartOptions(
+      tokens,
+      {
+        extend: {
+          plugins: {
+            legend: {
+              display: false
+            },
 
-          tooltip: {
-            enabled: false,
-            external: externalTooltip
-          },
+            tooltip: {
+              enabled: false,
+              external:
+                externalTooltip
+            },
 
-          crosshair: {
-            color: tokens.border
+            crosshair: {
+              color:
+                tokens.border
+            }
           }
         }
       }
-    }
-  )
+    )
 
-  /*
-   * KPI sparkline data.
-   */
+  /* =========================================================
+     SPARKLINES
+     ========================================================= */
+
   const netSalesSpark =
     actualValues.filter(
-      (value) => value !== null
+      (value) =>
+        value !== null
     )
 
   const forecastSpark =
     forecastValues.filter(
-      (value) => value !== null
+      (value) =>
+        value !== null
     )
 
-  /*
-   * CSV export data.
-   */
-  const csvRows = history_chart.map(
-    (item) => ({
-      date: item.date,
-      actual:
-        item.actual ?? '',
-      forecast:
-        item.forecast ?? ''
-    })
-  )
+  /* =========================================================
+     EXPORT
+     ========================================================= */
+
+  const csvRows =
+    history_chart.map(
+      (item) => ({
+        date: item.date,
+        actual:
+          item.actual ?? '',
+        forecast:
+          item.forecast ?? ''
+      })
+    )
+
+  /* =========================================================
+     DASHBOARD UI
+     ========================================================= */
 
   return (
     <div className="space-y-6">
@@ -397,6 +604,7 @@ export default function Dashboard() {
       >
 
         {/* NET SALES */}
+
         <div className="p-4">
 
           <p className="ss-eyebrow">
@@ -418,8 +626,14 @@ export default function Dashboard() {
             )}
           </h3>
 
-          <div className="flex items-center justify-between mt-1.5">
-
+          <div
+            className="
+              flex
+              items-center
+              justify-between
+              mt-1.5
+            "
+          >
             <span
               className="
                 text-[11px]
@@ -436,15 +650,14 @@ export default function Dashboard() {
 
             <Sparkline
               data={netSalesSpark}
-              color={DASHBOARD_ACCENT}
+              color={ACTUAL_COLOR}
             />
-
           </div>
 
         </div>
 
-
         {/* AI FORECAST */}
+
         <div className="p-4">
 
           <p className="ss-eyebrow">
@@ -466,7 +679,14 @@ export default function Dashboard() {
             )}
           </h3>
 
-          <div className="flex items-center justify-between mt-1.5">
+          <div
+            className="
+              flex
+              items-center
+              justify-between
+              mt-1.5
+            "
+          >
 
             <span
               className={`
@@ -486,9 +706,13 @@ export default function Dashboard() {
             >
 
               {kpis.variance_pct >= 0 ? (
-                <ArrowUpRight size={12} />
+                <ArrowUpRight
+                  size={12}
+                />
               ) : (
-                <ArrowDownRight size={12} />
+                <ArrowDownRight
+                  size={12}
+                />
               )}
 
               {Math.abs(
@@ -500,15 +724,17 @@ export default function Dashboard() {
 
             <Sparkline
               data={forecastSpark}
-              color={DASHBOARD_FORECAST}
+              color={
+                FORECAST_COLOR
+              }
             />
 
           </div>
 
         </div>
 
-
         {/* ACTIVE STORES */}
+
         <div
           className="
             p-4
@@ -527,6 +753,7 @@ export default function Dashboard() {
             "
           >
             <Store size={13} />
+
             Active stores
           </p>
 
@@ -545,8 +772,8 @@ export default function Dashboard() {
 
         </div>
 
-
         {/* ACTIVE PRODUCTS */}
+
         <div
           className="
             p-4
@@ -564,7 +791,10 @@ export default function Dashboard() {
               gap-1.5
             "
           >
-            <ShoppingBag size={13} />
+            <ShoppingBag
+              size={13}
+            />
+
             Active products
           </p>
 
@@ -583,8 +813,8 @@ export default function Dashboard() {
 
         </div>
 
+        {/* PREDICTIONS */}
 
-        {/* PREDICTION LINK */}
         <div
           className="
             p-4
@@ -601,7 +831,6 @@ export default function Dashboard() {
               hover:text-slate-900
               hover:underline
               font-semibold
-              transition-colors
             "
           >
             Detailed AI predictions →
@@ -610,7 +839,6 @@ export default function Dashboard() {
         </div>
 
       </Panel>
-
 
       {/* =====================================================
           SALES OVERVIEW
@@ -623,7 +851,13 @@ export default function Dashboard() {
           description="Actual sales vs. AI forecast"
 
           actions={
-            <div className="flex items-center gap-2">
+            <div
+              className="
+                flex
+                items-center
+                gap-2
+              "
+            >
 
               <RangeSwitcher
                 days={days}
@@ -660,7 +894,6 @@ export default function Dashboard() {
               ref={chartRef}
               data={historyData}
               options={historyOptions}
-
               plugins={[
                 crosshairPlugin,
 
@@ -680,9 +913,8 @@ export default function Dashboard() {
 
       </Panel>
 
-
       {/* =====================================================
-          CATEGORY + RECENT TRANSACTIONS
+          CATEGORY + TRANSACTIONS
           ===================================================== */}
 
       <div
@@ -694,7 +926,8 @@ export default function Dashboard() {
         "
       >
 
-        {/* CATEGORY MIX */}
+        {/* CATEGORY */}
+
         <Panel
           className="
             lg:col-span-2
@@ -717,17 +950,21 @@ export default function Dashboard() {
           >
 
             <CategoryRankedBars
-              categories={category_chart}
+              categories={
+                category_chart
+              }
             />
 
           </PanelBody>
 
         </Panel>
 
+        {/* TRANSACTIONS */}
 
-        {/* RECENT TRANSACTIONS */}
         <Panel
-          className="lg:col-span-3"
+          className="
+            lg:col-span-3
+          "
         >
 
           <PanelHeader
@@ -756,27 +993,15 @@ export default function Dashboard() {
             <thead>
 
               <tr>
-
-                <Th>
-                  Date
-                </Th>
-
-                <Th>
-                  Store
-                </Th>
-
-                <Th>
-                  Product
-                </Th>
-
+                <Th>Date</Th>
+                <Th>Store</Th>
+                <Th>Product</Th>
                 <Th numeric>
                   Qty
                 </Th>
-
                 <Th numeric>
                   Revenue
                 </Th>
-
               </tr>
 
             </thead>
@@ -786,7 +1011,9 @@ export default function Dashboard() {
               {recent_transactions.map(
                 (transaction) => (
                   <tr
-                    key={transaction.id}
+                    key={
+                      transaction.id
+                    }
                   >
 
                     <Td
@@ -807,7 +1034,9 @@ export default function Dashboard() {
                     </Td>
 
                     <Td>
-                      {transaction.store_id}
+                      {
+                        transaction.store_id
+                      }
                     </Td>
 
                     <Td
@@ -816,11 +1045,15 @@ export default function Dashboard() {
                         text-slate-700
                       "
                     >
-                      {transaction.product_id}
+                      {
+                        transaction.product_id
+                      }
                     </Td>
 
                     <Td numeric>
-                      {transaction.quantity}
+                      {
+                        transaction.quantity
+                      }
                     </Td>
 
                     <Td
@@ -831,7 +1064,8 @@ export default function Dashboard() {
                     >
                       $
                       {Number(
-                        transaction.revenue || 0
+                        transaction.revenue ||
+                          0
                       ).toLocaleString()}
                     </Td>
 
