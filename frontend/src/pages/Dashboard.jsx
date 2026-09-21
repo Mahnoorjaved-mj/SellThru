@@ -6,7 +6,7 @@ import {
   ArrowDownRight,
   ShoppingBag,
   Store,
-  Sparkles
+  Sparkles,
 } from 'lucide-react'
 
 import { Line } from 'react-chartjs-2'
@@ -18,13 +18,21 @@ import {
   LineElement,
   Tooltip,
   Legend,
-  Filler
+  Filler,
 } from 'chart.js'
 
 import { useApp } from '../context/context'
-import { Panel, PanelHeader, PanelBody } from '../components/ui/Panel'
+import {
+  Panel,
+  PanelHeader,
+  PanelBody,
+} from '../components/ui/Panel'
 import { Button } from '../components/ui/Button'
-import { Table, Th, Td } from '../components/ui/Table'
+import {
+  Table,
+  Th,
+  Td,
+} from '../components/ui/Table'
 import { SkeletonPanel } from '../components/ui/Skeleton'
 import { EmptyState } from '../components/ui/EmptyState'
 import { Sparkline } from '../components/charts/Sparkline'
@@ -38,34 +46,43 @@ import { createExternalTooltipHandler } from '../components/charts/tooltip'
 import {
   useChartTheme,
   baseChartOptions,
-  lineSeriesStyle
+  lineSeriesStyle,
 } from '../lib/chartTheme'
 import { formatCurrency } from '../lib/format'
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Tooltip,
+  Legend,
+  Filler
+)
 
 /* =========================================================
    DASHBOARD CACHE
    ========================================================= */
 
-const DASHBOARD_CACHE_VERSION = 'v4'
-const DASHBOARD_CACHE_TTL = 2 * 60 * 1000
+const CACHE_VERSION = 'real-data-v1'
 
 const ACTUAL_COLOR = '#475569'
 const FORECAST_COLOR = '#94A3B8'
 
-function getDashboardCacheKey(user, days) {
+function dashboardCacheKey(user, days) {
   const scope =
     user?._id ||
     user?.id ||
     user?.email ||
     'anonymous'
 
-  return `sellthru:dashboard:${DASHBOARD_CACHE_VERSION}:${scope}:${days}`
+  return `sellthru-dashboard-${CACHE_VERSION}-${scope}-${days}`
 }
 
 function readDashboardCache(user, days) {
   try {
     const raw = localStorage.getItem(
-      getDashboardCacheKey(user, days)
+      dashboardCacheKey(user, days)
     )
 
     if (!raw) {
@@ -78,12 +95,7 @@ function readDashboardCache(user, days) {
       return null
     }
 
-    return {
-      ...cached,
-      isFresh:
-        Date.now() - cached.savedAt <
-        DASHBOARD_CACHE_TTL
-    }
+    return cached
   } catch {
     return null
   }
@@ -92,41 +104,29 @@ function readDashboardCache(user, days) {
 function writeDashboardCache(user, days, data) {
   try {
     localStorage.setItem(
-      getDashboardCacheKey(user, days),
+      dashboardCacheKey(user, days),
       JSON.stringify({
         data,
-        savedAt: Date.now()
+        savedAt: Date.now(),
       })
     )
   } catch {
     // Cache is optional.
-    // Never break dashboard if localStorage is unavailable.
   }
 }
 
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Tooltip,
-  Legend,
-  Filler
-)
+/* =========================================================
+   DASHBOARD
+   ========================================================= */
 
 export default function Dashboard() {
   const {
     user,
     getDashboardSummary,
     seedSalesData,
-    toast
+    toast,
   } = useApp()
 
-  /*
-   * Read cached 30-day dashboard immediately.
-   * This prevents the dashboard from showing a long
-   * loading skeleton on every visit.
-   */
   const initialCache =
     readDashboardCache(user, 30)
 
@@ -158,10 +158,7 @@ export default function Dashboard() {
      ========================================================= */
 
   const loadData = useCallback(
-    async (
-      rangeDays,
-      { background = false } = {}
-    ) => {
+    async (rangeDays) => {
       const cached =
         readDashboardCache(
           user,
@@ -169,49 +166,42 @@ export default function Dashboard() {
         )
 
       /*
-       * If cached data exists,
-       * display it immediately.
+       * Show cached dashboard immediately.
        */
       if (cached?.data) {
         setData(cached.data)
         setLoading(false)
-      } else if (!background) {
+      } else {
         setLoading(true)
       }
 
       try {
         /*
-         * Existing backend API.
-         * No API contract has been changed.
+         * Fetch fresh real/demo data from backend.
          */
-        const res =
+        const response =
           await getDashboardSummary(
             rangeDays
           )
 
-        /*
-         * Replace cached data with
-         * fresh backend data.
-         */
-        setData(res)
+        setData(response)
         setLoading(false)
 
         writeDashboardCache(
           user,
           rangeDays,
-          res
+          response
         )
-      } catch (err) {
+      } catch (error) {
         setLoading(false)
 
         /*
-         * If cached data exists, keep
-         * showing it instead of blanking
-         * the dashboard.
+         * Never destroy a cached dashboard
+         * because of a temporary API problem.
          */
         if (!cached?.data) {
           toast(
-            err?.message ||
+            error?.message ||
               'Unable to load dashboard data.',
             'error'
           )
@@ -221,34 +211,15 @@ export default function Dashboard() {
     [
       getDashboardSummary,
       toast,
-      user
+      user,
     ]
   )
 
-  /*
-   * Load cached data first and then
-   * refresh it in the background.
-   */
   useEffect(() => {
-    const cached =
-      readDashboardCache(
-        user,
-        days
-      )
-
-    if (cached?.data) {
-      setData(cached.data)
-      setLoading(false)
-    }
-
-    loadData(days, {
-      background:
-        Boolean(cached?.data)
-    })
+    loadData(days)
   }, [
     loadData,
     days,
-    user
   ])
 
   /* =========================================================
@@ -268,18 +239,22 @@ export default function Dashboard() {
         'info'
       )
 
-      const res =
+      const response =
         await seedSalesData()
 
       toast(
-        res.message,
+        response.message,
         'success'
       )
 
+      /*
+       * Refresh dashboard after demo
+       * data generation.
+       */
       await loadData(days)
-    } catch (err) {
+    } catch (error) {
       toast(
-        err?.message ||
+        error?.message ||
           'Unable to generate demo data.',
         'error'
       )
@@ -293,18 +268,20 @@ export default function Dashboard() {
      ========================================================= */
 
   const toggleSeries = (label) => {
-    setHiddenSeries((prev) => {
-      const next =
-        new Set(prev)
+    setHiddenSeries(
+      (previous) => {
+        const next =
+          new Set(previous)
 
-      if (next.has(label)) {
-        next.delete(label)
-      } else {
-        next.add(label)
+        if (next.has(label)) {
+          next.delete(label)
+        } else {
+          next.add(label)
+        }
+
+        return next
       }
-
-      return next
-    })
+    )
   }
 
   /* =========================================================
@@ -316,13 +293,13 @@ export default function Dashboard() {
       {
         label: 'Actual Sales',
         color: ACTUAL_COLOR,
-        dashed: false
+        dashed: false,
       },
       {
         label: 'AI Forecast',
         color: FORECAST_COLOR,
-        dashed: true
-      }
+        dashed: true,
+      },
     ],
     []
   )
@@ -335,15 +312,15 @@ export default function Dashboard() {
             formatCurrency(
               value,
               {
-                compact: true
+                compact: true,
               }
-            )
+            ),
         }),
       []
     )
 
   /* =========================================================
-     INITIAL LOADING
+     LOADING
      ========================================================= */
 
   if (loading) {
@@ -358,10 +335,10 @@ export default function Dashboard() {
         "
       >
         {Array.from({
-          length: 3
-        }).map((_, i) => (
+          length: 3,
+        }).map((_, index) => (
           <SkeletonPanel
-            key={i}
+            key={index}
             rows={2}
           />
         ))}
@@ -379,7 +356,7 @@ export default function Dashboard() {
   }
 
   /* =========================================================
-     EMPTY DATA
+     EMPTY STATE
      ========================================================= */
 
   if (
@@ -407,10 +384,8 @@ export default function Dashboard() {
             icon={Sparkles}
             title="No sales data yet"
             description="
-              Upload your historical transactions
-              via a CSV sheet, or seed demo data
-              to preview the analytics dashboard
-              and AI predictions.
+              Upload your real retail CSV dataset
+              through the Transactions page.
             "
           />
 
@@ -431,7 +406,7 @@ export default function Dashboard() {
               <Database size={15} />
 
               <span>
-                Go to data manager
+                Upload real dataset
               </span>
             </Link>
 
@@ -456,7 +431,7 @@ export default function Dashboard() {
     kpis,
     history_chart,
     category_chart,
-    recent_transactions
+    recent_transactions,
   } = data
 
   /* =========================================================
@@ -500,7 +475,7 @@ export default function Dashboard() {
 
         ...lineSeriesStyle(
           ACTUAL_COLOR
-        )
+        ),
       },
 
       {
@@ -516,11 +491,11 @@ export default function Dashboard() {
         ...lineSeriesStyle(
           FORECAST_COLOR,
           {
-            dashed: true
+            dashed: true,
           }
-        )
-      }
-    ]
+        ),
+      },
+    ],
   }
 
   const historyOptions =
@@ -530,21 +505,21 @@ export default function Dashboard() {
         extend: {
           plugins: {
             legend: {
-              display: false
+              display: false,
             },
 
             tooltip: {
               enabled: false,
               external:
-                externalTooltip
+                externalTooltip,
             },
 
             crosshair: {
               color:
-                tokens.border
-            }
-          }
-        }
+                tokens.border,
+            },
+          },
+        },
       }
     )
 
@@ -575,12 +550,15 @@ export default function Dashboard() {
         actual:
           item.actual ?? '',
         forecast:
-          item.forecast ?? ''
+          item.forecast ?? '',
       })
     )
 
+  const isRealData =
+    data.data_source === 'real'
+
   /* =========================================================
-     DASHBOARD UI
+     UI
      ========================================================= */
 
   return (
@@ -634,6 +612,7 @@ export default function Dashboard() {
               mt-1.5
             "
           >
+
             <span
               className="
                 text-[11px]
@@ -652,6 +631,7 @@ export default function Dashboard() {
               data={netSalesSpark}
               color={ACTUAL_COLOR}
             />
+
           </div>
 
         </div>
@@ -733,7 +713,7 @@ export default function Dashboard() {
 
         </div>
 
-        {/* ACTIVE STORES */}
+        {/* CUSTOMERS / STORES */}
 
         <div
           className="
@@ -754,7 +734,9 @@ export default function Dashboard() {
           >
             <Store size={13} />
 
-            Active stores
+            {isRealData
+              ? 'Active customers'
+              : 'Active stores'}
           </p>
 
           <h4
@@ -767,12 +749,14 @@ export default function Dashboard() {
               mt-2
             "
           >
-            {kpis.active_stores}
+            {isRealData
+              ? kpis.active_customers
+              : kpis.active_stores}
           </h4>
 
         </div>
 
-        {/* ACTIVE PRODUCTS */}
+        {/* PRODUCTS */}
 
         <div
           className="
@@ -848,7 +832,12 @@ export default function Dashboard() {
 
         <PanelHeader
           title="Sales overview"
-          description="Actual sales vs. AI forecast"
+
+          description={
+            isRealData
+              ? 'Real retail dataset • actual sales vs. AI forecast'
+              : 'Actual sales vs. AI forecast'
+          }
 
           actions={
             <div
@@ -901,9 +890,9 @@ export default function Dashboard() {
                   () => boundaryIndex,
                   {
                     color:
-                      tokens.textTertiary
+                      tokens.textTertiary,
                   }
-                )
+                ),
               ]}
             />
 
@@ -938,7 +927,9 @@ export default function Dashboard() {
 
           <PanelHeader
             title="Category mix"
-            description={`Sales share by product group (last ${days}d)`}
+            description={
+              `Sales share by product group (last ${days}d)`
+            }
           />
 
           <PanelBody
@@ -959,7 +950,7 @@ export default function Dashboard() {
 
         </Panel>
 
-        {/* TRANSACTIONS */}
+        {/* RECENT TRANSACTIONS */}
 
         <Panel
           className="
@@ -993,15 +984,29 @@ export default function Dashboard() {
             <thead>
 
               <tr>
-                <Th>Date</Th>
-                <Th>Store</Th>
-                <Th>Product</Th>
+
+                <Th>
+                  Date
+                </Th>
+
+                <Th>
+                  {isRealData
+                    ? 'Customer'
+                    : 'Store'}
+                </Th>
+
+                <Th>
+                  Product
+                </Th>
+
                 <Th numeric>
                   Qty
                 </Th>
+
                 <Th numeric>
                   Revenue
                 </Th>
+
               </tr>
 
             </thead>
@@ -1028,15 +1033,22 @@ export default function Dashboard() {
                         undefined,
                         {
                           dateStyle:
-                            'short'
+                            'short',
                         }
                       )}
                     </Td>
 
                     <Td>
-                      {
-                        transaction.store_id
-                      }
+
+                      {isRealData
+                        ? (
+                            transaction.customer_id ||
+                            '—'
+                          )
+                        : (
+                            transaction.store_id
+                          )}
+
                     </Td>
 
                     <Td

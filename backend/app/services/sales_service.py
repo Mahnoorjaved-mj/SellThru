@@ -1,12 +1,10 @@
 """Sales data service.
 
 Handles CSV parsing/upload, paginated historical querying, and dashboard
-summaries. Every read/write is scoped to the caller's org_id.
-
-Dashboard reads use a short server-side cache. The cache is invalidated
-whenever sales are uploaded or an import is undone, so new real data becomes
-visible without forcing an expensive recalculation on every dashboard visit.
+summaries. Real retail datasets are normalized into SellThru's internal
+schema while preserving customer and transaction identifiers.
 """
+
 from __future__ import annotations
 
 import copy
@@ -15,58 +13,83 @@ import hashlib
 import io
 import logging
 import time
-from datetime import datetime, timezone, timedelta
+
+from datetime import (
+    datetime,
+    timezone,
+    timedelta,
+)
+
 from typing import Optional
 
-from fastapi import HTTPException, UploadFile, Request
+from fastapi import (
+    HTTPException,
+    UploadFile,
+    Request,
+)
 
 from app.repositories import (
     imports_repo,
     products_repo,
     sales_repo,
-    stores_repo
+    stores_repo,
 )
+
 from app.schemas.common import serialize
-from app.services.audit_service import log_event
 
-log = logging.getLogger("sellthru.sales")
+from app.services.audit_service import (
+    log_event,
+)
 
-MAX_UPLOAD_ROWS = 100_000
-MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25MB
+
+log = logging.getLogger(
+    "sellthru.sales"
+)
+
+MAX_UPLOAD_ROWS = 200_000
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 
 
 # ============================================================
-# DASHBOARD SERVER CACHE
+# DASHBOARD CACHE
 # ============================================================
 
 _DASHBOARD_CACHE: dict[
     tuple[str, int],
-    tuple[float, dict]
+    tuple[float, dict],
 ] = {}
 
-DASHBOARD_CACHE_TTL_SECONDS = 45
+DASHBOARD_CACHE_TTL_SECONDS = 300
 
 
 def invalidate_dashboard_cache(
-    org_id: str
+    org_id: str,
 ) -> None:
-    """Invalidate every cached dashboard range for an organization."""
+    """Clear all cached dashboard ranges for an organization."""
 
-    for key in list(_DASHBOARD_CACHE):
+    for key in list(
+        _DASHBOARD_CACHE
+    ):
+
         if key[0] == org_id:
+
             _DASHBOARD_CACHE.pop(
                 key,
-                None
+                None,
             )
 
+
+# ============================================================
+# ROW HASH
+# ============================================================
 
 def _row_hash(
     org_id: str,
     store_id: str,
     product_id: str,
     date_iso: str,
-    qty: int,
-    rev: float
+    qty: float,
+    rev: float,
 ) -> str:
 
     raw = (
@@ -91,20 +114,21 @@ async def upload_sales_csv(
     org_id: str,
     user_id: str,
     file: UploadFile,
-    request: Request
+    request: Request,
 ) -> dict:
-    """Parse, validate and idempotently bulk-load sales CSV data."""
+    """Import SellThru CSV or the supplied retail dataset."""
 
     contents = await file.read()
 
     if len(contents) > MAX_UPLOAD_BYTES:
+
         raise HTTPException(
             status_code=400,
             detail=(
-                f"File exceeds the "
+                "File exceeds the "
                 f"{MAX_UPLOAD_BYTES // (1024 * 1024)}MB "
-                f"upload limit"
-            )
+                "upload limit"
+            ),
         )
 
     file_hash = hashlib.sha256(
@@ -112,6 +136,7 @@ async def upload_sales_csv(
     ).hexdigest()
 
     try:
+
         csv_text = contents.decode(
             "utf-8"
         )
@@ -119,28 +144,26 @@ async def upload_sales_csv(
     except UnicodeDecodeError:
 
         try:
+
             csv_text = contents.decode(
                 "latin-1"
             )
 
         except Exception as exc:
+
             raise HTTPException(
                 status_code=400,
-                detail=f"Invalid file encoding: {exc}"
+                detail=(
+                    f"Invalid file encoding: "
+                    f"{exc}"
+                ),
             )
 
     reader = csv.DictReader(
-        io.StringIO(csv_text)
+        io.StringIO(
+            csv_text
+        )
     )
-
-    required_cols = {
-        "date",
-        "store_id",
-        "product_id",
-        "category",
-        "quantity",
-        "revenue"
-    }
 
     headers = {
         h.strip().lower()
@@ -148,26 +171,69 @@ async def upload_sales_csv(
             reader.fieldnames
             or []
         )
+        if h
     }
 
-    missing = (
-        required_cols - headers
+    # ========================================================
+    # STANDARD SELLTHRU FORMAT
+    # ========================================================
+
+    standard_required = {
+        "date",
+        "store_id",
+        "product_id",
+        "category",
+        "quantity",
+        "revenue",
+    }
+
+    # ========================================================
+    # YOUR REAL DATASET FORMAT
+    # ========================================================
+
+    retail_required = {
+        "date",
+        "customer_id",
+        "transaction_id",
+        "sku_category",
+        "sku",
+        "quantity",
+        "sales_amount",
+    }
+
+    is_retail_dataset = (
+        retail_required
+        .issubset(headers)
     )
 
-    if missing:
+    if (
+        not is_retail_dataset
+        and
+        not standard_required.issubset(
+            headers
+        )
+    ):
+
         raise HTTPException(
             status_code=400,
             detail=(
-                "CSV is missing required "
-                "columns: "
-                +
-                ", ".join(missing)
-            )
+                "CSV format not recognized. "
+                "Expected either SellThru format "
+                "or the retail dataset format: "
+                "Date, Customer_ID, Transaction_ID, "
+                "SKU_Category, SKU, Quantity, "
+                "Sales_Amount."
+            ),
         )
 
     records = []
     errors = []
+
     row_num = 1
+
+    # ========================================================
+    # PARSE ROWS
+    # ========================================================
 
     for row in reader:
 
@@ -175,172 +241,345 @@ async def upload_sales_csv(
 
         if (
             row_num - 1
-            > MAX_UPLOAD_ROWS
+            >
+            MAX_UPLOAD_ROWS
         ):
+
             errors.append({
-                "row": row_num,
-                "error": (
-                    f"Row cap of "
-                    f"{MAX_UPLOAD_ROWS} "
-                    "exceeded — remaining "
-                    "rows skipped"
-                )
+                "row":
+                    row_num,
+
+                "error":
+                    (
+                        f"Row cap of "
+                        f"{MAX_UPLOAD_ROWS} "
+                        "exceeded"
+                    ),
             })
+
             break
 
         row_clean = {
             key.strip().lower():
-                value.strip()
-            for key, value in row.items()
+                (
+                    value.strip()
+                    if isinstance(
+                        value,
+                        str,
+                    )
+                    else ""
+                )
+
+            for key, value
+            in row.items()
             if key
         }
 
         try:
-            dt_str = row_clean[
-                "date"
-            ]
 
-            dt = None
+            # ==================================================
+            # REAL RETAIL DATASET
+            # ==================================================
+
+            if is_retail_dataset:
+
+                date_text = (
+                    row_clean["date"]
+                )
+
+                store_id = (
+                    "ONLINE"
+                )
+
+                product_id = (
+                    row_clean["sku"]
+                )
+
+                category = (
+                    row_clean[
+                        "sku_category"
+                    ]
+                )
+
+                quantity = float(
+                    row_clean[
+                        "quantity"
+                    ]
+                )
+
+                revenue = float(
+                    row_clean[
+                        "sales_amount"
+                    ]
+                )
+
+                customer_id = (
+                    row_clean[
+                        "customer_id"
+                    ]
+                )
+
+                transaction_id = (
+                    row_clean[
+                        "transaction_id"
+                    ]
+                )
+
+                source = "real"
+
+            # ==================================================
+            # EXISTING SELLTHRU FORMAT
+            # ==================================================
+
+            else:
+
+                date_text = (
+                    row_clean["date"]
+                )
+
+                store_id = (
+                    row_clean[
+                        "store_id"
+                    ]
+                )
+
+                product_id = (
+                    row_clean[
+                        "product_id"
+                    ]
+                )
+
+                category = (
+                    row_clean[
+                        "category"
+                    ]
+                )
+
+                quantity = float(
+                    row_clean[
+                        "quantity"
+                    ]
+                )
+
+                revenue = float(
+                    row_clean[
+                        "revenue"
+                    ]
+                )
+
+                customer_id = (
+                    row_clean.get(
+                        "customer_id"
+                    )
+                    or None
+                )
+
+                transaction_id = (
+                    row_clean.get(
+                        "transaction_id"
+                    )
+                    or None
+                )
+
+                source = "uploaded"
+
+            # ==================================================
+            # DATE PARSING
+            # ==================================================
+
+            parsed_date = None
 
             for fmt in (
                 "%Y-%m-%d",
                 "%Y/%m/%d",
                 "%d-%m-%Y",
-                "%m/%d/%Y"
+                "%m/%d/%Y",
             ):
 
                 try:
-                    dt = datetime.strptime(
-                        dt_str,
-                        fmt
-                    ).replace(
-                        tzinfo=timezone.utc
+
+                    parsed_date = (
+                        datetime.strptime(
+                            date_text,
+                            fmt,
+                        ).replace(
+                            tzinfo=timezone.utc
+                        )
                     )
+
                     break
 
                 except ValueError:
+
                     continue
 
-            if not dt:
+            if not parsed_date:
+
                 raise ValueError(
-                    f"Unrecognized date format: "
-                    f"'{dt_str}'"
+                    f"Unrecognized date: "
+                    f"{date_text}"
                 )
 
-            qty = int(
-                row_clean["quantity"]
-            )
+            # ==================================================
+            # VALIDATION
+            # ==================================================
 
-            rev = float(
-                row_clean["revenue"]
-            )
+            if quantity < 0:
 
-            if qty < 0 or rev < 0:
                 raise ValueError(
-                    "Quantity and Revenue "
-                    "must be non-negative values"
+                    "Quantity cannot be negative"
                 )
 
-            if (
-                not row_clean.get(
-                    "store_id"
-                )
-                or
-                not row_clean.get(
-                    "product_id"
-                )
-            ):
+            if revenue < 0:
+
                 raise ValueError(
-                    "store_id and product_id "
-                    "are required"
+                    "Revenue cannot be negative"
                 )
+
+            if not product_id:
+
+                raise ValueError(
+                    "Product/SKU is required"
+                )
+
+            # ==================================================
+            # OPTIONAL FLAGS
+            # ==================================================
 
             is_holiday = (
                 row_clean.get(
                     "is_holiday",
-                    "false"
+                    "false",
                 ).lower()
                 in (
                     "true",
                     "1",
-                    "yes"
+                    "yes",
                 )
             )
 
             is_promo = (
                 row_clean.get(
                     "is_promo",
-                    "false"
+                    "false",
                 ).lower()
                 in (
                     "true",
                     "1",
-                    "yes"
+                    "yes",
                 )
             )
 
-            date_iso = dt.strftime(
-                "%Y-%m-%d"
+            quantity = round(
+                quantity,
+                4,
             )
-
-            store_id = row_clean[
-                "store_id"
-            ]
-
-            product_id = row_clean[
-                "product_id"
-            ]
 
             revenue = round(
-                rev,
-                2
+                revenue,
+                2,
             )
 
-            records.append({
-                "date": dt,
-                "store_id": store_id,
-                "product_id": product_id,
-                "category": row_clean[
-                    "category"
-                ],
-                "quantity": qty,
-                "revenue": revenue,
-                "is_holiday": is_holiday,
-                "is_promo": is_promo,
-                "row_hash": _row_hash(
-                    org_id,
+            date_iso = (
+                parsed_date.strftime(
+                    "%Y-%m-%d"
+                )
+            )
+
+            document = {
+
+                "date":
+                    parsed_date,
+
+                "store_id":
                     store_id,
+
+                "product_id":
                     product_id,
-                    date_iso,
-                    qty,
-                    revenue
-                ),
-            })
+
+                "category":
+                    category
+                    or
+                    "Uncategorized",
+
+                "quantity":
+                    quantity,
+
+                "revenue":
+                    revenue,
+
+                "is_holiday":
+                    is_holiday,
+
+                "is_promo":
+                    is_promo,
+
+                "source":
+                    source,
+
+                "row_hash":
+                    _row_hash(
+                        org_id,
+                        store_id,
+                        product_id,
+                        date_iso,
+                        quantity,
+                        revenue,
+                    ),
+            }
+
+            if customer_id:
+
+                document[
+                    "customer_id"
+                ] = customer_id
+
+            if transaction_id:
+
+                document[
+                    "transaction_id"
+                ] = transaction_id
+
+            records.append(
+                document
+            )
 
         except Exception as exc:
 
             errors.append({
-                "row": row_num,
-                "error": str(exc)
+                "row":
+                    row_num,
+
+                "error":
+                    str(exc),
             })
 
-    if not records and not errors:
+    # ========================================================
+    # EMPTY FILE
+    # ========================================================
+
+    if (
+        not records
+        and
+        not errors
+    ):
+
         raise HTTPException(
             status_code=400,
             detail=(
                 "CSV file contains "
                 "no data rows"
-            )
+            ),
         )
 
     if not records:
+
         raise HTTPException(
             status_code=400,
             detail=(
                 f"All {len(errors)} rows "
-                "failed validation — "
-                "nothing was imported"
-            )
+                "failed validation"
+            ),
         )
 
     # ========================================================
@@ -353,7 +592,7 @@ async def upload_sales_csv(
             [
                 row["row_hash"]
                 for row in records
-            ]
+            ],
         )
     )
 
@@ -366,7 +605,8 @@ async def upload_sales_csv(
 
     skipped_duplicates = (
         len(records)
-        - len(new_records)
+        -
+        len(new_records)
     )
 
     # ========================================================
@@ -379,6 +619,13 @@ async def upload_sales_csv(
             {
                 "filename":
                     file.filename,
+
+                "dataset_type":
+                    (
+                        "retail_real"
+                        if is_retail_dataset
+                        else "standard"
+                    ),
 
                 "file_hash":
                     file_hash,
@@ -408,7 +655,7 @@ async def upload_sales_csv(
                     datetime.now(
                         timezone.utc
                     ),
-            }
+            },
         )
     )
 
@@ -417,17 +664,24 @@ async def upload_sales_csv(
     )
 
     for row in new_records:
-        row["import_id"] = import_id
+
+        row["import_id"] = (
+            import_id
+        )
+
+    # ========================================================
+    # INSERT DATA
+    # ========================================================
 
     inserted = (
         await sales_repo.insert_many(
             org_id,
-            new_records
+            new_records,
         )
     )
 
     # ========================================================
-    # AUTO REGISTER STORES / PRODUCTS
+    # REGISTER PRODUCTS / STORE
     # ========================================================
 
     for row in new_records:
@@ -436,8 +690,9 @@ async def upload_sales_csv(
             org_id,
             row["store_id"],
             {
-                "is_active": True
-            }
+                "is_active":
+                    True,
+            },
         )
 
         await products_repo.upsert(
@@ -448,28 +703,19 @@ async def upload_sales_csv(
                     row["category"],
 
                 "is_active":
-                    True
-            }
+                    True,
+            },
         )
 
     await imports_repo.mark_rows_imported(
         org_id,
         import_id,
-        inserted
+        inserted,
     )
 
-    if errors:
-
-        from app.services.alerts_service import (
-            notify_import_failed
-        )
-
-        await notify_import_failed(
-            org_id,
-            file.filename,
-            len(errors),
-            import_id
-        )
+    # ========================================================
+    # LOG
+    # ========================================================
 
     await log_event(
         "sales_csv_uploaded",
@@ -479,6 +725,13 @@ async def upload_sales_csv(
         metadata={
             "filename":
                 file.filename,
+
+            "dataset_type":
+                (
+                    "retail_real"
+                    if is_retail_dataset
+                    else "standard"
+                ),
 
             "rows_imported":
                 inserted,
@@ -490,13 +743,12 @@ async def upload_sales_csv(
                 len(errors),
 
             "import_id":
-                import_id
-        }
+                import_id,
+        },
     )
 
     # ========================================================
-    # IMPORTANT:
-    # NEW DATA INVALIDATES BOTH DASHBOARD AND FORECAST CACHE
+    # CACHE INVALIDATION
     # ========================================================
 
     invalidate_dashboard_cache(
@@ -514,7 +766,10 @@ async def upload_sales_csv(
         )
 
     except Exception:
-        pass
+
+        log.exception(
+            "ML cache invalidation failed"
+        )
 
     # ========================================================
     # RESPONSE
@@ -524,19 +779,27 @@ async def upload_sales_csv(
         f"Imported {inserted} rows"
     )
 
+    if is_retail_dataset:
+
+        message += (
+            " from real retail dataset"
+        )
+
     if skipped_duplicates:
+
         message += (
             f", skipped "
             f"{skipped_duplicates} duplicates"
         )
 
     if errors:
+
         message += (
-            f", {len(errors)} rows "
-            "failed validation"
+            f", {len(errors)} rows failed"
         )
 
     return {
+
         "status":
             "success",
 
@@ -548,6 +811,13 @@ async def upload_sales_csv(
 
         "import_id":
             import_id,
+
+        "dataset_type":
+            (
+                "retail_real"
+                if is_retail_dataset
+                else "standard"
+            ),
 
         "rows_imported":
             inserted,
@@ -564,65 +834,129 @@ async def upload_sales_csv(
 
 
 # ============================================================
-# DASHBOARD SUMMARY
+# DASHBOARD
 # ============================================================
 
 async def get_dashboard_summary(
     org_id: str,
-    days: int = 30
+    days: int = 30,
 ) -> dict:
-    """Compute dashboard metrics with short-lived caching."""
+    """Return real retail data when a real dataset exists."""
 
     days = max(
         7,
         min(
             int(days),
-            365
-        )
+            365,
+        ),
     )
 
     cache_key = (
         org_id,
-        days
+        days,
     )
 
     now = time.monotonic()
-
-    # ========================================================
-    # SERVER CACHE
-    # ========================================================
 
     cached = _DASHBOARD_CACHE.get(
         cache_key
     )
 
     if (
-    cached
-    and
-    now - cached[0]
-    < DASHBOARD_CACHE_TTL_SECONDS
-):
+        cached
+        and
+        now - cached[0]
+        <
+        DASHBOARD_CACHE_TTL_SECONDS
+    ):
+
         return copy.deepcopy(
             cached[1]
         )
 
     # ========================================================
-    # LATEST SALE
+    # REAL DATA DETECTION
     # ========================================================
 
-    latest_sale = (
-        await sales_repo.find_latest(
-            org_id
+    real_probe = (
+        await sales_repo.aggregate(
+            org_id,
+            [
+                {
+                    "$match": {
+                        "source":
+                            "real",
+                    }
+                },
+                {
+                    "$limit":
+                        1,
+                },
+            ],
+            length=1,
         )
+    )
+
+    real_mode = bool(
+        real_probe
+    )
+
+    source_match = (
+        {
+            "source":
+                "real",
+        }
+        if real_mode
+        else {}
+    )
+
+    # ========================================================
+    # LATEST REAL DATE
+    # ========================================================
+
+    latest_rows = (
+        await sales_repo.aggregate(
+            org_id,
+            [
+                {
+                    "$match":
+                        source_match,
+                },
+                {
+                    "$sort": {
+                        "date":
+                            -1,
+                    }
+                },
+                {
+                    "$limit":
+                        1,
+                },
+            ],
+            length=1,
+        )
+    )
+
+    latest_sale = (
+        latest_rows[0]
+        if latest_rows
+        else None
     )
 
     if not latest_sale:
 
         result = {
+
             "status":
                 "empty",
 
+            "data_source":
+                "real"
+                if real_mode
+                else "demo",
+
             "kpis": {
+
                 "total_sales":
                     0.0,
 
@@ -639,7 +973,13 @@ async def get_dashboard_summary(
                     0,
 
                 "active_products":
-                    0
+                    0,
+
+                "active_customers":
+                    0,
+
+                "transactions":
+                    0,
             },
 
             "history_chart":
@@ -649,14 +989,14 @@ async def get_dashboard_summary(
                 [],
 
             "recent_transactions":
-                []
+                [],
         }
 
         _DASHBOARD_CACHE[
             cache_key
         ] = (
             now,
-            result
+            result,
         )
 
         return copy.deepcopy(
@@ -675,93 +1015,120 @@ async def get_dashboard_summary(
         )
     )
 
-    prior_start = (
-        anchor_date
-        -
-        timedelta(
-            days=days * 2
-        )
-    )
-
     # ========================================================
-    # TOTAL SALES
+    # KPI QUERY
     # ========================================================
 
-    pipeline_period = [
+    summary_pipeline = [
 
         {
             "$match": {
+                **source_match,
+
                 "date": {
                     "$gte":
                         start_period,
 
                     "$lte":
-                        anchor_date
-                }
+                        anchor_date,
+                },
             }
         },
 
         {
             "$group": {
-                "_id": None,
+
+                "_id":
+                    None,
 
                 "total_rev": {
                     "$sum":
-                        "$revenue"
+                        "$revenue",
                 },
 
                 "stores": {
                     "$addToSet":
-                        "$store_id"
+                        "$store_id",
                 },
 
                 "products": {
                     "$addToSet":
-                        "$product_id"
-                }
+                        "$product_id",
+                },
+
+                "customers": {
+                    "$addToSet":
+                        "$customer_id",
+                },
+
+                "transactions": {
+                    "$sum":
+                        1,
+                },
             }
-        }
+        },
     ]
 
-    res_list = (
+    summary_rows = (
         await sales_repo.aggregate(
             org_id,
-            pipeline_period,
-            length=1
+            summary_pipeline,
+            length=1,
         )
     )
 
-    total_sales = 0.0
-    active_stores = 0
-    active_products = 0
+    summary = (
+        summary_rows[0]
+        if summary_rows
+        else {}
+    )
 
-    if res_list:
-
-        summary = res_list[0]
-
-        total_sales = float(
-            summary.get(
-                "total_rev",
-                0.0
-            )
+    total_sales = float(
+        summary.get(
+            "total_rev",
+            0.0,
         )
+    )
 
-        active_stores = len(
-            summary.get(
-                "stores",
-                []
-            )
+    active_stores = len([
+        value
+        for value
+        in summary.get(
+            "stores",
+            [],
         )
+        if value
+    ])
 
-        active_products = len(
-            summary.get(
-                "products",
-                []
-            )
+    active_products = len([
+        value
+        for value
+        in summary.get(
+            "products",
+            [],
         )
+        if value
+    ])
+
+    active_customers = len([
+        value
+        for value
+        in summary.get(
+            "customers",
+            [],
+        )
+        if value
+    ])
+
+    transactions = int(
+        summary.get(
+            "transactions",
+            0,
+        )
+    )
 
     # ========================================================
-    # AI FORECAST
+    # FORECAST
     # ========================================================
 
     from app.ml.predictor import (
@@ -770,34 +1137,38 @@ async def get_dashboard_summary(
 
     try:
 
-        preds = await ai_predictor.predict(
-            org_id,
-            horizon_days=days
+        predictions = (
+            await ai_predictor.predict(
+                org_id,
+                horizon_days=days,
+            )
         )
 
-        forecast_sales_period = sum(
+        forecast_sales = sum(
             float(
                 prediction.get(
                     "revenue",
-                    0.0
+                    0.0,
                 )
             )
-            for prediction in preds
+
+            for prediction
+            in predictions
         )
 
     except Exception as exc:
 
         log.exception(
-            "Dashboard forecast failed "
-            "for org=%s: %s",
-            org_id,
-            exc
+            "Dashboard forecast failed: %s",
+            exc,
         )
 
-        preds = []
+        predictions = []
 
-        forecast_sales_period = (
-            total_sales * 1.05
+        forecast_sales = (
+            total_sales
+            *
+            1.05
         )
 
     # ========================================================
@@ -805,34 +1176,43 @@ async def get_dashboard_summary(
     # ========================================================
 
     variance_pct = (
+
+        (
+            forecast_sales
+            -
+            total_sales
+        )
+
+        /
+
         (
             total_sales
-            -
-            forecast_sales_period
-        )
-        /
-        (
-            forecast_sales_period
             +
             1e-8
         )
-    ) * 100.0
+
+        *
+
+        100.0
+    )
 
     # ========================================================
     # ACTUAL DAILY SALES
     # ========================================================
 
-    daily_actuals_pipeline = [
+    actual_pipeline = [
 
         {
             "$match": {
+                **source_match,
+
                 "date": {
                     "$gte":
                         start_period,
 
                     "$lte":
-                        anchor_date
-                }
+                        anchor_date,
+                },
             }
         },
 
@@ -845,37 +1225,36 @@ async def get_dashboard_summary(
                             "%Y-%m-%d",
 
                         "date":
-                            "$date"
+                            "$date",
                     }
                 },
 
                 "revenue": {
                     "$sum":
-                        "$revenue"
-                }
+                        "$revenue",
+                },
             }
         },
 
         {
             "$sort": {
-                "_id": 1
+                "_id":
+                    1,
             }
-        }
+        },
     ]
 
-    actuals_res = (
+    actual_rows = (
         await sales_repo.aggregate(
             org_id,
-            daily_actuals_pipeline,
-            length=days + 5
+            actual_pipeline,
+            length=days + 5,
         )
     )
 
-    history_chart = []
+    history_chart = [
 
-    for row in actuals_res:
-
-        history_chart.append({
+        {
             "date":
                 row["_id"],
 
@@ -884,244 +1263,211 @@ async def get_dashboard_summary(
                     float(
                         row["revenue"]
                     ),
-                    2
+                    2,
                 ),
 
             "forecast":
-                None
+                None,
+        }
+
+        for row
+        in actual_rows
+    ]
+
+    # ========================================================
+    # FORECAST BY DATE
+    # ========================================================
+
+    forecast_by_date = {}
+
+    for prediction in predictions:
+
+        date_value = (
+            prediction.get(
+                "date"
+            )
+        )
+
+        if hasattr(
+            date_value,
+            "strftime",
+        ):
+
+            date_key = (
+                date_value.strftime(
+                    "%Y-%m-%d"
+                )
+            )
+
+        else:
+
+            date_key = str(
+                date_value
+            )[:10]
+
+        forecast_by_date[
+            date_key
+        ] = (
+            forecast_by_date.get(
+                date_key,
+                0.0,
+            )
+            +
+            float(
+                prediction.get(
+                    "revenue",
+                    0.0,
+                )
+            )
+        )
+
+    for (
+        date_key,
+        value,
+    ) in sorted(
+        forecast_by_date.items()
+    ):
+
+        history_chart.append({
+
+            "date":
+                date_key,
+
+            "actual":
+                None,
+
+            "forecast":
+                round(
+                    value,
+                    2,
+                ),
         })
 
     # ========================================================
-    # FUTURE FORECAST
+    # CATEGORY MIX
     # ========================================================
 
-    if preds:
-
-        daily_preds = {}
-
-        for prediction in preds:
-
-            date_value = (
-                prediction["date"]
-            )
-
-            if hasattr(
-                date_value,
-                "strftime"
-            ):
-                date_str = (
-                    date_value.strftime(
-                        "%Y-%m-%d"
-                    )
-                )
-            else:
-                date_str = str(
-                    date_value
-                )[:10]
-
-            daily_preds[
-                date_str
-            ] = (
-                daily_preds.get(
-                    date_str,
-                    0.0
-                )
-                +
-                float(
-                    prediction.get(
-                        "revenue",
-                        0.0
-                    )
-                )
-            )
-
-        for date_str, value in sorted(
-            daily_preds.items()
-        ):
-
-            history_chart.append({
-                "date":
-                    date_str,
-
-                "actual":
-                    None,
-
-                "forecast":
-                    round(
-                        value,
-                        2
-                    )
-            })
-
-    # ========================================================
-    # CATEGORY BREAKDOWN
-    # ========================================================
-
-    cat_pipeline = [
+    category_pipeline = [
 
         {
             "$match": {
+                **source_match,
+
                 "date": {
                     "$gte":
                         start_period,
 
                     "$lte":
-                        anchor_date
-                }
+                        anchor_date,
+                },
             }
         },
 
         {
             "$group": {
+
                 "_id":
                     "$category",
 
                 "value": {
                     "$sum":
-                        "$revenue"
-                }
+                        "$revenue",
+                },
             }
         },
 
         {
             "$sort": {
-                "value": -1
-            }
-        }
-    ]
-
-    cat_res = (
-        await sales_repo.aggregate(
-            org_id,
-            cat_pipeline,
-            length=10
-        )
-    )
-
-    prior_cat_pipeline = [
-
-        {
-            "$match": {
-                "date": {
-                    "$gte":
-                        prior_start,
-
-                    "$lt":
-                        start_period
-                }
+                "value":
+                    -1,
             }
         },
-
-        {
-            "$group": {
-                "_id":
-                    "$category",
-
-                "value": {
-                    "$sum":
-                        "$revenue"
-                }
-            }
-        }
     ]
 
-    prior_cat_res = (
+    category_rows = (
         await sales_repo.aggregate(
             org_id,
-            prior_cat_pipeline,
-            length=10
+            category_pipeline,
+            length=10,
         )
     )
-
-    prior_by_category = {
-        row["_id"]:
-            float(
-                row["value"]
-            )
-
-        for row in prior_cat_res
-    }
 
     category_total = (
         sum(
             float(
                 row["value"]
             )
-            for row in cat_res
+            for row
+            in category_rows
         )
-        or 1e-8
+        or
+        1e-8
     )
 
-    category_chart = []
+    category_chart = [
 
-    for row in cat_res:
-
-        value = round(
-            float(
-                row["value"]
-            ),
-            2
-        )
-
-        previous = (
-            prior_by_category.get(
-                row["_id"],
-                0.0
-            )
-        )
-
-        delta_pct = (
-            (
-                value
-                -
-                previous
-            )
-            /
-            previous
-            *
-            100.0
-        ) if previous > 0 else None
-
-        category_chart.append({
-
+        {
             "name":
-                row["_id"],
+                row["_id"]
+                or
+                "Uncategorized",
 
             "value":
-                value,
+                round(
+                    float(
+                        row["value"]
+                    ),
+                    2,
+                ),
 
             "share_pct":
                 round(
-                    value /
-                    category_total *
+                    float(
+                        row["value"]
+                    )
+                    /
+                    category_total
+                    *
                     100.0,
-                    1
+                    1,
                 ),
+        }
 
-            "delta_pct":
-                round(
-                    delta_pct,
-                    1
-                )
-                if delta_pct
-                is not None
-                else None
-        })
+        for row
+        in category_rows
+    ]
 
     # ========================================================
     # RECENT TRANSACTIONS
     # ========================================================
 
-    recent_docs = (
-        await sales_repo.find_recent(
+    recent_rows = (
+        await sales_repo.aggregate(
             org_id,
-            limit=10
+            [
+                {
+                    "$match":
+                        source_match,
+                },
+                {
+                    "$sort": {
+                        "date":
+                            -1,
+                    }
+                },
+                {
+                    "$limit":
+                        10,
+                },
+            ],
+            length=10,
         )
     )
 
     recent_transactions = [
-        serialize(doc)
-        for doc in recent_docs
+        serialize(row)
+        for row
+        in recent_rows
     ]
 
     # ========================================================
@@ -1136,38 +1482,53 @@ async def get_dashboard_summary(
         "range_days":
             days,
 
+        "data_source":
+            "real"
+            if real_mode
+            else "demo",
+
         "kpis": {
 
             "total_sales":
                 round(
                     total_sales,
-                    2
+                    2,
                 ),
 
             "avg_daily_sales":
                 round(
-                    total_sales /
-                    days,
-                    2
+                    total_sales
+                    /
+                    max(
+                        days,
+                        1,
+                    ),
+                    2,
                 ),
 
             "forecast_sales_30d":
                 round(
-                    forecast_sales_period,
-                    2
+                    forecast_sales,
+                    2,
                 ),
 
             "variance_pct":
                 round(
                     variance_pct,
-                    2
+                    2,
                 ),
 
             "active_stores":
                 active_stores,
 
             "active_products":
-                active_products
+                active_products,
+
+            "active_customers":
+                active_customers,
+
+            "transactions":
+                transactions,
         },
 
         "history_chart":
@@ -1177,12 +1538,8 @@ async def get_dashboard_summary(
             category_chart,
 
         "recent_transactions":
-            recent_transactions
+            recent_transactions,
     }
-
-    # ========================================================
-    # SAVE SERVER CACHE
-    # ========================================================
 
     _DASHBOARD_CACHE[
         cache_key
@@ -1190,7 +1547,7 @@ async def get_dashboard_summary(
         time.monotonic(),
         copy.deepcopy(
             result
-        )
+        ),
     )
 
     return result
@@ -1210,45 +1567,58 @@ async def get_sales_history(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
 ) -> dict:
-    """Query paginated historical transactions."""
 
     query = {}
 
     if store_id:
-        query["store_id"] = store_id
+        query["store_id"] = (
+            store_id
+        )
 
     if product_id:
-        query["product_id"] = product_id
+        query["product_id"] = (
+            product_id
+        )
 
     if category:
-        query["category"] = category
+        query["category"] = (
+            category
+        )
 
     date_query = {}
 
     if start_date:
+
         try:
+
             date_query["$gte"] = (
                 datetime.strptime(
                     start_date,
-                    "%Y-%m-%d"
+                    "%Y-%m-%d",
                 ).replace(
                     tzinfo=timezone.utc
                 )
             )
+
         except ValueError:
+
             pass
 
     if end_date:
+
         try:
+
             date_query["$lte"] = (
                 datetime.strptime(
                     end_date,
-                    "%Y-%m-%d"
+                    "%Y-%m-%d",
                 ).replace(
                     tzinfo=timezone.utc
                 )
             )
+
         except ValueError:
+
             pass
 
     if date_query:
@@ -1256,42 +1626,45 @@ async def get_sales_history(
 
     total = await sales_repo.count(
         org_id,
-        query
+        query,
     )
 
     skip = (
         page - 1
     ) * limit
 
-    docs = await sales_repo.find_paginated(
-        org_id,
-        query,
-        skip,
-        limit
+    docs = (
+        await sales_repo.find_paginated(
+            org_id,
+            query,
+            skip,
+            limit,
+        )
     )
 
     stores = (
         await sales_repo.distinct_field(
             org_id,
-            "store_id"
+            "store_id",
         )
     )
 
     products = (
         await sales_repo.distinct_field(
             org_id,
-            "product_id"
+            "product_id",
         )
     )
 
     categories = (
         await sales_repo.distinct_field(
             org_id,
-            "category"
+            "category",
         )
     )
 
     return {
+
         "status":
             "success",
 
@@ -1306,10 +1679,12 @@ async def get_sales_history(
 
         "sales": [
             serialize(doc)
-            for doc in docs
+            for doc
+            in docs
         ],
 
         "filters": {
+
             "stores":
                 sorted(stores),
 
@@ -1317,8 +1692,8 @@ async def get_sales_history(
                 sorted(products),
 
             "categories":
-                sorted(categories)
-        }
+                sorted(categories),
+        },
     }
 
 
@@ -1327,7 +1702,7 @@ async def get_sales_history(
 # ============================================================
 
 async def get_import_history(
-    org_id: str
+    org_id: str,
 ) -> dict:
 
     docs = (
@@ -1337,13 +1712,15 @@ async def get_import_history(
     )
 
     return {
+
         "status":
             "success",
 
         "imports": [
             serialize(doc)
-            for doc in docs
-        ]
+            for doc
+            in docs
+        ],
     }
 
 
@@ -1354,45 +1731,50 @@ async def get_import_history(
 async def undo_import(
     org_id: str,
     import_id: str,
-    request: Request
+    request: Request,
 ) -> dict:
-    """Soft-delete every transaction from an import."""
 
     batch = (
         await imports_repo.find_by_id(
             org_id,
-            import_id
+            import_id,
         )
     )
 
     if not batch:
+
         raise HTTPException(
             status_code=404,
-            detail="Import not found"
+            detail="Import not found",
         )
 
-    if batch.get(
-        "status"
-    ) == "undone":
+    if (
+        batch.get(
+            "status"
+        )
+        ==
+        "undone"
+    ):
+
         raise HTTPException(
             status_code=400,
             detail=(
                 "This import has "
                 "already been undone"
-            )
+            ),
         )
 
     removed = (
         await sales_repo.soft_delete_by_import(
             org_id,
-            import_id
+            import_id,
         )
     )
 
     await imports_repo.mark_undone(
         org_id,
         import_id,
-        removed
+        removed,
     )
 
     await log_event(
@@ -1404,12 +1786,9 @@ async def undo_import(
                 import_id,
 
             "rows_removed":
-                removed
-        }
+                removed,
+        },
     )
-
-    # Clear dashboard and forecast cache
-    # after undoing sales data.
 
     invalidate_dashboard_cache(
         org_id
@@ -1426,16 +1805,22 @@ async def undo_import(
         )
 
     except Exception:
-        pass
+
+        log.exception(
+            "ML cache invalidation failed"
+        )
 
     return {
+
         "status":
             "success",
 
         "message":
-            f"Removed {removed} rows "
-            "from this import",
+            (
+                f"Removed {removed} rows "
+                "from this import"
+            ),
 
         "rows_removed":
-            removed
+            removed,
     }
