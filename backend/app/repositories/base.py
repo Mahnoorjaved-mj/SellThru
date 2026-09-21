@@ -130,6 +130,9 @@ async def ensure_indexes() -> None:
 
     # Org-scoped compound indexes for fast, isolated querying
     await sales().create_index([("org_id", ASCENDING), ("date", ASCENDING)])
+    await sales().create_index([("org_id", ASCENDING), ("source", ASCENDING), ("date", ASCENDING)])
+    await sales().create_index([("org_id", ASCENDING), ("customer_id", ASCENDING)])
+    await sales().create_index([("org_id", ASCENDING), ("product_id", ASCENDING)])
     await sales().create_index(
         [("org_id", ASCENDING), ("store_id", ASCENDING), ("product_id", ASCENDING), ("date", ASCENDING)]
     )
