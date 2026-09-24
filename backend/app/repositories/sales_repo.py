@@ -27,16 +27,21 @@ async def count(org_id: str, query: Optional[dict] = None) -> int:
     return await sales().count_documents(_scoped(org_id, query))
 
 
-async def insert_many(org_id: str, records: list[dict]) -> int:
+async def insert_many(org_id: str, records: list[dict], chunk_size: int = 5000) -> int:
+    if not records:
+        return 0
     now = datetime.now(timezone.utc)
     for r in records:
         r["org_id"] = org_id
         r.setdefault("is_deleted", False)
         r.setdefault("created_at", now)
-    if not records:
-        return 0
-    res = await sales().insert_many(records)
-    return len(res.inserted_ids)
+    
+    total_inserted = 0
+    for i in range(0, len(records), chunk_size):
+        chunk = records[i:i + chunk_size]
+        res = await sales().insert_many(chunk, ordered=False)
+        total_inserted += len(res.inserted_ids)
+    return total_inserted
 
 
 async def find_latest(org_id: str) -> dict | None:
