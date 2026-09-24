@@ -564,8 +564,8 @@ export default function Dashboard() {
           <h1 className="text-xl font-bold tracking-tight text-primary">Executive Dashboard</h1>
           <p className="text-xs text-secondary mt-0.5">Real-time demand forecasting and retail metrics</p>
         </div>
-        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold uppercase tracking-wider ${isRealData ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800' : 'bg-slate-100 text-slate-700 border border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'}`}>
-          <span className={`h-1.5 w-1.5 rounded-full ${isRealData ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold uppercase tracking-wider ${isRealData ? 'bg-soft-green text-emerald-green border border-emerald-green/30 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800' : 'bg-pale-blue text-deep-teal border border-deep-teal/20 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'}`}>
+          <span className={`h-1.5 w-1.5 rounded-full ${isRealData ? 'bg-emerald-green' : 'bg-deep-teal'}`} />
           {isRealData ? 'REAL DATA' : 'DEMO DATA'}
         </span>
       </div>

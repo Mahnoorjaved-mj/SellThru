@@ -29,9 +29,17 @@ export default function Login() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-app px-4">
       <div className="w-full max-w-sm">
-        <div className="mb-6 flex items-center justify-center gap-2">
-          <TrendingUp className="text-accent" size={24} />
-          <span className="text-page font-semibold text-primary tracking-tight">Sellthru</span>
+        <div className="mb-6 flex flex-col items-center justify-center gap-2">
+          <div className="h-11 w-11 rounded-xl bg-deep-teal text-white flex items-center justify-center shadow-sm">
+            <TrendingUp size={24} className="text-emerald-400" />
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xl font-bold text-primary tracking-tight">Sellthru</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-pale-blue text-deep-teal">
+              AI
+            </span>
+          </div>
+          <p className="text-xs text-secondary font-medium">Predictive Retail Intelligence</p>
         </div>
         <form onSubmit={submit} className="ss-card space-y-4 p-6">
           <h1 className="text-section font-semibold text-primary">Sign in</h1>
