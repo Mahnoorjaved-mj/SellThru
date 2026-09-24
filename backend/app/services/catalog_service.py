@@ -7,9 +7,26 @@ from app.repositories import products_repo, stores_repo
 from app.schemas.common import serialize
 
 
-async def list_products(org_id: str) -> dict:
+async def list_products(
+    org_id: str,
+    page: int | None = None,
+    limit: int | None = None,
+    search: str | None = None,
+) -> dict:
+    if page is not None and limit is not None:
+        total = await products_repo.count(org_id, search=search)
+        skip = max(0, (page - 1) * limit)
+        docs = await products_repo.find_paginated(org_id, skip=skip, limit=limit, search=search)
+        return {
+            "status": "success",
+            "products": [serialize(d) for d in docs],
+            "total": total,
+            "page": page,
+            "limit": limit,
+        }
+
     docs = await products_repo.list_all(org_id)
-    return {"status": "success", "products": [serialize(d) for d in docs]}
+    return {"status": "success", "products": [serialize(d) for d in docs], "total": len(docs)}
 
 
 async def update_product(org_id: str, product_oid: str, fields: dict) -> dict:

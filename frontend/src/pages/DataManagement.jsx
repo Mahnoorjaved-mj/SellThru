@@ -37,6 +37,52 @@ export default function DataManagement() {
   const [uploadFile, setUploadFile] = useState(null)
   const [uploading, setUploading] = useState(false)
   const [loadingList, setLoadingList] = useState(false)
+  const [fileValidation, setFileValidation] = useState(null)
+  const [lastUploadResult, setLastUploadResult] = useState(null)
+
+  const validateFileHeaders = (file) => {
+    if (!file) {
+      setFileValidation(null)
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      try {
+        const text = e.target.result || ''
+        const firstLine = text.split(/\r?\n/)[0] || ''
+        const headers = firstLine.split(',').map((h) => h.trim().replace(/^["']|["']$/g, '').toLowerCase())
+
+        const retailHeaders = ['date', 'customer_id', 'transaction_id', 'sku_category', 'sku', 'quantity', 'sales_amount']
+        const standardHeaders = ['date', 'product_id', 'quantity', 'revenue']
+
+        const hasRetail = retailHeaders.every((h) => headers.includes(h))
+        const hasStandard = standardHeaders.every((h) => headers.includes(h))
+
+        if (hasRetail) {
+          setFileValidation({
+            valid: true,
+            type: 'retail',
+            message: 'Real Retail Dataset (7/7 columns verified: Date, Customer_ID, Transaction_ID, SKU_Category, SKU, Quantity, Sales_Amount)',
+          })
+        } else if (hasStandard) {
+          setFileValidation({
+            valid: true,
+            type: 'standard',
+            message: 'Standard SellThru Format (date, product_id, quantity, revenue)',
+          })
+        } else {
+          setFileValidation({
+            valid: false,
+            type: 'unknown',
+            message: 'Custom or unmapped headers. Expected either Real Retail Dataset or SellThru format.',
+          })
+        }
+      } catch {
+        setFileValidation(null)
+      }
+    }
+    reader.readAsText(file.slice(0, 2048))
+  }
 
   const fetchHistory = useCallback(async () => {
     setLoadingList(true)
@@ -48,7 +94,7 @@ export default function DataManagement() {
         product_id: selectedProduct,
         category: selectedCategory,
         start_date: startDate,
-        end_date: endDate
+        end_date: endDate,
       })
       setSalesList(res.sales || [])
       setTotal(res.total || 0)
@@ -85,6 +131,12 @@ export default function DataManagement() {
     try {
       const res = await undoImport(importId)
       toast(res.message, 'success')
+      // Clear dashboard cache on undo
+      try {
+        Object.keys(localStorage).forEach((k) => {
+          if (k.startsWith('sellthru-dashboard-')) localStorage.removeItem(k)
+        })
+      } catch { /* ignore */ }
       await Promise.all([fetchImports(), fetchHistory()])
     } catch (err) {
       toast(err.message, 'error')
@@ -127,6 +179,7 @@ export default function DataManagement() {
       const file = e.dataTransfer.files[0]
       if (file.name.endsWith('.csv')) {
         setUploadFile(file)
+        validateFileHeaders(file)
       } else {
         toast('Please upload only CSV files', 'error')
       }
@@ -135,7 +188,9 @@ export default function DataManagement() {
 
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files[0]) {
-      setUploadFile(e.target.files[0])
+      const file = e.target.files[0]
+      setUploadFile(file)
+      validateFileHeaders(file)
     }
   }
 
@@ -147,10 +202,24 @@ export default function DataManagement() {
     formData.append('file', uploadFile)
 
     try {
-      toast('Uploading CSV sheet...', 'info')
+      toast('Uploading and processing CSV dataset...', 'info')
       const res = await uploadSalesCsv(formData)
       toast(res.message, res.rows_failed > 0 ? 'warn' : 'success')
+      setLastUploadResult({
+        imported: res.rows_imported ?? res.count ?? 0,
+        skipped: res.rows_skipped_duplicate ?? 0,
+        failed: res.rows_failed ?? 0,
+        dataset_type: res.dataset_type,
+        message: res.message,
+      })
+      // Clear dashboard cache so it loads real data immediately
+      try {
+        Object.keys(localStorage).forEach((k) => {
+          if (k.startsWith('sellthru-dashboard-')) localStorage.removeItem(k)
+        })
+      } catch { /* ignore */ }
       setUploadFile(null)
+      setFileValidation(null)
       setPage(1)
       fetchHistory()
       fetchImports()
@@ -198,29 +267,71 @@ export default function DataManagement() {
                 <label htmlFor="csv-file-input" className="flex flex-col items-center cursor-pointer text-center">
                   <Upload size={32} className="text-secondary mb-3" />
                   <span className="text-sm font-semibold text-primary mb-1">Drag and drop file here</span>
-                  <span className="text-xs text-secondary">or click to browse from folder</span>
+                  <span className="text-xs text-secondary">or click to browse from folder (supports .csv)</span>
                 </label>
               ) : (
-                <div className="flex flex-col items-center w-full max-w-sm text-center">
-                  <div className="flex items-center gap-2 bg-surface px-4 py-2 border border-line rounded mb-4 w-full">
+                <div className="flex flex-col items-center w-full max-w-md text-center space-y-3">
+                  <div className="flex items-center gap-2 bg-surface px-4 py-2.5 border border-line rounded w-full">
                     <Database size={15} className="text-accent flex-shrink-0" />
-                    <span className="text-xs font-semibold text-primary truncate flex-1 text-left">
-                      {uploadFile.name}
-                    </span>
+                    <div className="flex-1 min-w-0 text-left">
+                      <p className="text-xs font-semibold text-primary truncate">{uploadFile.name}</p>
+                      <p className="text-[11px] text-secondary font-mono">{(uploadFile.size / (1024 * 1024)).toFixed(2)} MB</p>
+                    </div>
                     <button
                       type="button"
-                      onClick={() => setUploadFile(null)}
+                      onClick={() => {
+                        setUploadFile(null)
+                        setFileValidation(null)
+                      }}
                       className="text-tertiary hover:text-primary transition-colors duration-120 ease-out"
                     >
                       <X size={14} />
                     </button>
                   </div>
+
+                  {fileValidation && (
+                    <div
+                      className={`w-full text-left text-xs p-2.5 rounded border ${
+                        fileValidation.valid
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-300 dark:border-emerald-800'
+                          : 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-800'
+                      }`}
+                    >
+                      <span className="font-semibold">{fileValidation.valid ? '✓ Verified Format: ' : '⚠ Warning: '}</span>
+                      {fileValidation.message}
+                    </div>
+                  )}
+
                   <Button type="submit" size="submit" className="w-full font-semibold" disabled={uploading}>
-                    {uploading ? 'Processing spreadsheet…' : 'Upload & commit transactions'}
+                    {uploading ? 'Processing & indexing spreadsheet…' : 'Upload & commit dataset'}
                   </Button>
                 </div>
               )}
             </form>
+
+            {lastUploadResult && (
+              <div className="mt-4 p-3.5 bg-surface border border-line rounded flex items-center justify-between text-xs">
+                <div>
+                  <span className="font-semibold text-primary">Last Upload Result: </span>
+                  <span className="text-emerald-600 dark:text-emerald-400 font-mono font-semibold">{lastUploadResult.imported.toLocaleString()} imported</span>
+                  <span className="text-secondary"> • </span>
+                  <span className="text-secondary font-mono">{lastUploadResult.skipped.toLocaleString()} duplicates skipped</span>
+                  {lastUploadResult.failed > 0 && (
+                    <>
+                      <span className="text-secondary"> • </span>
+                      <span className="text-rose-600 dark:text-rose-400 font-mono font-semibold">{lastUploadResult.failed.toLocaleString()} failed</span>
+                    </>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setLastUploadResult(null)}
+                  className="text-tertiary hover:text-primary ml-2"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            )}
           </PanelBody>
         </Panel>
 
@@ -229,21 +340,27 @@ export default function DataManagement() {
           <PanelBody>
             <h3 className="text-sm font-semibold text-primary flex items-center gap-2 mb-2">
               <AlertCircle size={15} className="text-accent" />
-              <span>CSV format guidelines</span>
+              <span>Supported CSV Formats</span>
             </h3>
-            <p className="text-body text-secondary leading-relaxed mb-4">
-              To guarantee successful parsing, the CSV sheet must include the following headers (case-insensitive):
+            <p className="text-body text-secondary leading-relaxed mb-3">
+              SellThru automatically detects your CSV structure upon upload:
             </p>
-            <ul className="space-y-1.5 text-xs text-primary font-mono bg-bg p-3 border border-line rounded mb-4">
-              <li>• <span className="font-semibold">date</span>: YYYY-MM-DD</li>
-              <li>• <span className="font-semibold">store_id</span>: string code</li>
-              <li>• <span className="font-semibold">product_id</span>: string code</li>
-              <li>• <span className="font-semibold">category</span>: item category</li>
-              <li>• <span className="font-semibold">quantity</span>: positive integer</li>
-              <li>• <span className="font-semibold">revenue</span>: positive float</li>
-            </ul>
-            <div className="text-[11px] text-tertiary font-medium">
-              Optional flags: <span className="font-mono font-semibold">is_holiday</span> and <span className="font-mono font-semibold">is_promo</span> (true/false) are supported.
+            <div className="space-y-3">
+              <div className="bg-bg p-2.5 border border-line rounded">
+                <p className="text-[11px] font-semibold text-primary mb-1">Real Retail Dataset (dataset.csv)</p>
+                <p className="text-[11px] text-secondary font-mono leading-tight">
+                  Date, Customer_ID, Transaction_ID, SKU_Category, SKU, Quantity, Sales_Amount
+                </p>
+              </div>
+              <div className="bg-bg p-2.5 border border-line rounded">
+                <p className="text-[11px] font-semibold text-primary mb-1">Standard SellThru Dataset</p>
+                <p className="text-[11px] text-secondary font-mono leading-tight">
+                  date, store_id, product_id, category, quantity, revenue
+                </p>
+              </div>
+            </div>
+            <div className="text-[11px] text-tertiary font-medium mt-3">
+              Dates in <span className="font-mono font-semibold">DD/MM/YYYY</span> or <span className="font-mono font-semibold">YYYY-MM-DD</span> are automatically parsed.
             </div>
           </PanelBody>
         </Panel>
@@ -371,13 +488,12 @@ export default function DataManagement() {
                 <thead>
                   <tr>
                     <Th>Date</Th>
-                    <Th>Store</Th>
-                    <Th>Product</Th>
+                    <Th>Customer / Store</Th>
+                    <Th>Product SKU</Th>
                     <Th>Category</Th>
-                    <Th numeric>Qty sold</Th>
-                    <Th numeric>Daily revenue</Th>
-                    <Th>Holiday?</Th>
-                    <Th>Promo?</Th>
+                    <Th numeric>Qty</Th>
+                    <Th numeric>Revenue</Th>
+                    <Th>Promo / Holiday</Th>
                   </tr>
                 </thead>
                 <tbody>
@@ -386,13 +502,28 @@ export default function DataManagement() {
                       <Td className="whitespace-nowrap font-medium">
                         {new Date(t.date).toLocaleDateString(undefined, { dateStyle: 'medium' })}
                       </Td>
-                      <Td>{t.store_id}</Td>
-                      <Td className="font-semibold text-accent">{t.product_id}</Td>
-                      <Td>{t.category}</Td>
+                      <Td className="font-mono text-xs">
+                        {t.customer_id ? (
+                          <span title={t.transaction_id ? `Tx: ${t.transaction_id}` : undefined}>
+                            {t.customer_id}
+                          </span>
+                        ) : (
+                          t.store_id || '—'
+                        )}
+                      </Td>
+                      <Td className="font-semibold text-accent font-mono text-xs">{t.product_id}</Td>
+                      <Td>{t.category || '—'}</Td>
                       <Td numeric>{t.quantity}</Td>
-                      <Td numeric className="font-semibold">${t.revenue.toLocaleString()}</Td>
-                      <Td>{t.is_holiday ? <Badge variant="positive">Yes</Badge> : <span className="text-tertiary text-[11px]">—</span>}</Td>
-                      <Td>{t.is_promo ? <Badge variant="warning">Yes</Badge> : <span className="text-tertiary text-[11px]">—</span>}</Td>
+                      <Td numeric className="font-semibold">${Number(t.revenue || 0).toLocaleString()}</Td>
+                      <Td>
+                        {t.is_promo ? (
+                          <Badge variant="warning">Promo</Badge>
+                        ) : t.is_holiday ? (
+                          <Badge variant="positive">Holiday</Badge>
+                        ) : (
+                          <span className="text-tertiary text-[11px]">—</span>
+                        )}
+                      </Td>
                     </tr>
                   ))}
                 </tbody>

@@ -130,11 +130,11 @@ export default function Alerts() {
                 <>
                   <div>
                     <Label>Store (optional)</Label>
-                    <Input value={storeId} onChange={(e) => setStoreId(e.target.value)} placeholder="e.g. Store-101" />
+                    <Input value={storeId} onChange={(e) => setStoreId(e.target.value)} placeholder="Leave blank for omnichannel" />
                   </div>
                   <div>
-                    <Label>Product (optional)</Label>
-                    <Input value={productId} onChange={(e) => setProductId(e.target.value)} placeholder="e.g. PROD-A" />
+                    <Label>Product SKU (optional)</Label>
+                    <Input value={productId} onChange={(e) => setProductId(e.target.value)} placeholder="e.g. 0EM7L" />
                   </div>
                   <div>
                     <Label>Drop threshold (%)</Label>

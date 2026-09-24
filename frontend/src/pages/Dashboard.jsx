@@ -6,6 +6,7 @@ import {
   ArrowDownRight,
   ShoppingBag,
   Store,
+  Users,
   Sparkles,
 } from 'lucide-react'
 
@@ -66,8 +67,8 @@ ChartJS.register(
 
 const CACHE_VERSION = 'real-data-v1'
 
-const ACTUAL_COLOR = '#475569'
-const FORECAST_COLOR = '#94A3B8'
+const ACTUAL_COLOR = '#465C59'
+const FORECAST_COLOR = '#CFA12C'
 
 function dashboardCacheKey(user, days) {
   const scope =
@@ -465,35 +466,29 @@ export default function Dashboard() {
     datasets: [
       {
         label: 'Actual Sales',
-
         data: actualValues,
-
-        hidden:
-          hiddenSeries.has(
-            'Actual Sales'
-          ),
-
-        ...lineSeriesStyle(
-          ACTUAL_COLOR
-        ),
+        hidden: hiddenSeries.has('Actual Sales'),
+        ...lineSeriesStyle(ACTUAL_COLOR),
+        borderWidth: 2.5,
+        tension: 0.35,
+        fill: true,
+        backgroundColor: 'rgba(70, 92, 89, 0.08)',
+        pointRadius: 2.5,
+        pointHoverRadius: 6,
+        pointBackgroundColor: ACTUAL_COLOR,
       },
-
       {
         label: 'AI Forecast',
-
         data: forecastValues,
-
-        hidden:
-          hiddenSeries.has(
-            'AI Forecast'
-          ),
-
-        ...lineSeriesStyle(
-          FORECAST_COLOR,
-          {
-            dashed: true,
-          }
-        ),
+        hidden: hiddenSeries.has('AI Forecast'),
+        ...lineSeriesStyle(FORECAST_COLOR, { dashed: true }),
+        borderWidth: 2.5,
+        tension: 0.35,
+        fill: true,
+        backgroundColor: 'rgba(207, 161, 44, 0.08)',
+        pointRadius: 2.5,
+        pointHoverRadius: 6,
+        pointBackgroundColor: FORECAST_COLOR,
       },
     ],
   }
@@ -563,6 +558,17 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+      {/* HEADER & SOURCE INDICATOR */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight text-primary">Executive Dashboard</h1>
+          <p className="text-xs text-secondary mt-0.5">Real-time demand forecasting and retail metrics</p>
+        </div>
+        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold uppercase tracking-wider ${isRealData ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800' : 'bg-slate-100 text-slate-700 border border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'}`}>
+          <span className={`h-1.5 w-1.5 rounded-full ${isRealData ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+          {isRealData ? 'REAL DATA' : 'DEMO DATA'}
+        </span>
+      </div>
 
       {/* =====================================================
           KPI STRIP
@@ -732,7 +738,7 @@ export default function Dashboard() {
               gap-1.5
             "
           >
-            <Store size={13} />
+            {isRealData ? <Users size={13} /> : <Store size={13} />}
 
             {isRealData
               ? 'Active customers'
@@ -808,7 +814,7 @@ export default function Dashboard() {
         >
 
           <Link
-            to="/predictions"
+            to="/insights"
             className="
               text-xs
               text-slate-700
@@ -817,7 +823,7 @@ export default function Dashboard() {
               font-semibold
             "
           >
-            Detailed AI predictions →
+            Detailed AI insights →
           </Link>
 
         </div>

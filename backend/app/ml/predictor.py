@@ -713,6 +713,14 @@ class AIPredictor:
         # ENCODERS
         # ----------------------------------------------------
 
+        if "store_id" not in df.columns or df["store_id"].isna().all():
+            df["store_id"] = "ALL"
+        else:
+            df["store_id"] = df["store_id"].fillna("ALL").astype(str)
+
+        df["product_id"] = df.get("product_id", pd.Series(dtype=str)).fillna("UNKNOWN").astype(str)
+        df["category"] = df.get("category", pd.Series(dtype=str)).fillna("Uncategorized").astype(str)
+
         le_store = (
             LabelEncoder()
         )
@@ -1369,16 +1377,7 @@ class AIPredictor:
 
         if (
             real_mode
-            and
-            (
-                not active_model
-                or
-                active_model.get(
-                    "data_source"
-                )
-                !=
-                "real"
-            )
+            and not product_id
         ):
 
             return (
@@ -1392,16 +1391,18 @@ class AIPredictor:
         # DATES
         # ====================================================
 
-        now = datetime.now(
-            timezone.utc
-        )
+        latest_sale = await sales_repo.find_latest(org_id)
+        if latest_sale and "date" in latest_sale:
+            anchor = latest_sale["date"]
+        else:
+            anchor = datetime.now(timezone.utc)
 
         target_dates = [
 
             datetime(
-                now.year,
-                now.month,
-                now.day,
+                anchor.year,
+                anchor.month,
+                anchor.day,
                 tzinfo=timezone.utc,
             )
             +
@@ -1545,9 +1546,10 @@ class AIPredictor:
         target_stores = (
             [store_id]
             if store_id
-            else
-            list(
-                le_store.classes_
+            else (
+                [le_store.classes_[0]]
+                if (real_mode and len(le_store.classes_) > 0)
+                else list(le_store.classes_)
             )
         )
 
@@ -1828,7 +1830,7 @@ class AIPredictor:
                             target_date,
 
                         "store_id":
-                            store,
+                            store if not real_mode else None,
 
                         "product_id":
                             item[
@@ -1926,29 +1928,6 @@ class AIPredictor:
                 cached[1]
             )
 
-        now = datetime.now(
-            timezone.utc
-        )
-
-        target_dates = [
-
-            datetime(
-                now.year,
-                now.month,
-                now.day,
-                tzinfo=timezone.utc,
-            )
-            +
-            timedelta(
-                days=index
-            )
-
-            for index in range(
-                1,
-                horizon_days + 1,
-            )
-        ]
-
         pipeline = [
 
             {
@@ -1975,6 +1954,11 @@ class AIPredictor:
                         "$sum":
                             "$revenue",
                     },
+
+                    "quantity": {
+                        "$sum":
+                            "$quantity",
+                    },
                 }
             },
 
@@ -1987,7 +1971,7 @@ class AIPredictor:
 
             {
                 "$limit":
-                    56,
+                    90,
             },
         ]
 
@@ -1995,13 +1979,39 @@ class AIPredictor:
             await sales_repo.aggregate(
                 org_id,
                 pipeline,
-                length=56,
+                length=90,
             )
         )
 
         if not rows:
 
             return []
+
+        # Anchor forecast directly to the dataset's latest historical date
+        latest_str = rows[0]["_id"]
+        latest_dt = datetime.strptime(
+            latest_str,
+            "%Y-%m-%d",
+        ).replace(
+            tzinfo=timezone.utc
+        )
+
+        target_dates = [
+            datetime(
+                latest_dt.year,
+                latest_dt.month,
+                latest_dt.day,
+                tzinfo=timezone.utc,
+            )
+            +
+            timedelta(
+                days=index
+            )
+            for index in range(
+                1,
+                horizon_days + 1,
+            )
+        ]
 
         rows = list(
             reversed(rows)
@@ -2031,6 +2041,24 @@ class AIPredictor:
                 recent_values
             )
         )
+
+        daily_qtys = [
+            float(
+                row.get("quantity", 0) or 0
+            )
+            for row
+            in rows
+        ]
+
+        recent_qtys = (
+            daily_qtys[-28:]
+            if len(daily_qtys) >= 28
+            else daily_qtys
+        )
+
+        overall_qty = float(
+            np.mean(recent_qtys)
+        ) if recent_qtys else 1.0
 
         weekday_values = {}
 
@@ -2127,7 +2155,7 @@ class AIPredictor:
                     target_date,
 
                 "store_id":
-                    "ONLINE",
+                    None,
 
                 "product_id":
                     "ALL",
@@ -2136,7 +2164,13 @@ class AIPredictor:
                     "All categories",
 
                 "quantity":
-                    0.0,
+                    round(
+                        max(
+                            0,
+                            overall_qty * (forecast / (overall + 1e-8)),
+                        ),
+                        2,
+                    ),
 
                 "revenue":
                     round(
@@ -2305,21 +2339,28 @@ class AIPredictor:
                     "Uncategorized"
                 )
 
+                weekday_map = {
+                    0: 0.88,  # Monday
+                    1: 0.92,  # Tuesday
+                    2: 0.96,  # Wednesday
+                    3: 1.04,  # Thursday
+                    4: 1.18,  # Friday
+                    5: 1.28,  # Saturday peak
+                    6: 1.02,  # Sunday
+                }
+
+                import math
+
                 for index, target_date in enumerate(
                     target_dates
                 ):
+                    weekday_factor = weekday_map.get(
+                        target_date.weekday(),
+                        1.0,
+                    )
 
-                    weekday_factor = (
-                        1.08
-                        if
-                        target_date.weekday()
-                        in
-                        [
-                            4,
-                            5,
-                        ]
-                        else
-                        0.96
+                    wave_factor = 1.0 + 0.07 * math.sin(
+                        index * 2 * math.pi / 14
                     )
 
                     trend_factor = (
@@ -2331,7 +2372,7 @@ class AIPredictor:
                         )
                         *
                         0.002
-                    )
+                    ) * wave_factor
 
                     predictions.append({
 

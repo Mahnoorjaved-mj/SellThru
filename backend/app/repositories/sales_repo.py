@@ -73,15 +73,24 @@ async def aggregate(org_id: str, pipeline: list[dict], length: int = 1000) -> li
     return await sales().aggregate(scoped_pipeline).to_list(length=length)
 
 
-async def find_existing_hashes(org_id: str, hashes: list[str]) -> set[str]:
+async def find_existing_hashes(org_id: str, hashes: list[str], chunk_size: int = 5000) -> set[str]:
     """Used for CSV-upload idempotency: which of these row hashes already exist for this org."""
     if not hashes:
         return set()
-    cursor = sales().find(
-        {"org_id": org_id, "row_hash": {"$in": hashes}}, {"row_hash": 1}
-    )
-    docs = await cursor.to_list(length=len(hashes))
-    return {d["row_hash"] for d in docs}
+    # Fast exit if organization has no sales yet
+    sales_cnt = await count(org_id)
+    if sales_cnt == 0:
+        return set()
+
+    existing = set()
+    for i in range(0, len(hashes), chunk_size):
+        chunk = hashes[i:i + chunk_size]
+        cursor = sales().find(
+            {"org_id": org_id, "row_hash": {"$in": chunk}}, {"row_hash": 1}
+        )
+        docs = await cursor.to_list(length=len(chunk))
+        existing.update(d["row_hash"] for d in docs if "row_hash" in d)
+    return existing
 
 
 async def soft_delete_by_import(org_id: str, import_id: str) -> int:

@@ -208,7 +208,14 @@ export function AppProvider({ children }) {
       undoImport: (importId) => request('POST', `/api/sales/imports/${importId}/undo`, {}),
 
       // Catalog (products/stores)
-      getProducts: () => request('GET', '/api/catalog/products'),
+      getProducts: (params = {}) => {
+        const q = new URLSearchParams()
+        Object.entries(params).forEach(([k, v]) => {
+          if (v !== undefined && v !== null && v !== '') q.append(k, v)
+        })
+        const queryStr = q.toString()
+        return request('GET', `/api/catalog/products${queryStr ? `?${queryStr}` : ''}`)
+      },
       updateProduct: (oid, fields) => request('PATCH', `/api/catalog/products/${oid}`, fields),
       deleteProduct: (oid) => request('DELETE', `/api/catalog/products/${oid}`),
       getStores: () => request('GET', '/api/catalog/stores'),

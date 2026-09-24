@@ -85,20 +85,23 @@ def invalidate_dashboard_cache(
 
 def _row_hash(
     org_id: str,
-    store_id: str,
+    store_id: str | None,
     product_id: str,
     date_iso: str,
     qty: float,
     rev: float,
+    customer_id: str | None = None,
+    transaction_id: str | None = None,
 ) -> str:
-
     raw = (
         f"{org_id}|"
-        f"{store_id}|"
+        f"{store_id or ''}|"
         f"{product_id}|"
         f"{date_iso}|"
         f"{qty}|"
-        f"{rev}"
+        f"{rev}|"
+        f"{customer_id or ''}|"
+        f"{transaction_id or ''}"
     )
 
     return hashlib.sha256(
@@ -287,9 +290,7 @@ async def upload_sales_csv(
                     row_clean["date"]
                 )
 
-                store_id = (
-                    "ONLINE"
-                )
+                store_id = None
 
                 product_id = (
                     row_clean["sku"]
@@ -390,10 +391,11 @@ async def upload_sales_csv(
             parsed_date = None
 
             for fmt in (
+                "%d/%m/%Y",
                 "%Y-%m-%d",
-                "%Y/%m/%d",
                 "%d-%m-%Y",
                 "%m/%d/%Y",
+                "%Y/%m/%d",
             ):
 
                 try:
@@ -525,6 +527,8 @@ async def upload_sales_csv(
                         date_iso,
                         quantity,
                         revenue,
+                        customer_id=customer_id,
+                        transaction_id=transaction_id,
                     ),
             }
 
@@ -681,31 +685,37 @@ async def upload_sales_csv(
     )
 
     # ========================================================
-    # REGISTER PRODUCTS / STORE
+    # REGISTER PRODUCTS / STORES (BULK & DEDUPLICATED)
     # ========================================================
 
+    product_map = {}
     for row in new_records:
+        pid = row.get("product_id")
+        if pid and pid not in product_map:
+            product_map[pid] = {
+                "product_id": pid,
+                "category": row.get("category", "Uncategorized"),
+            }
 
-        await stores_repo.upsert(
+    if product_map:
+        await products_repo.bulk_upsert(
             org_id,
-            row["store_id"],
-            {
-                "is_active":
-                    True,
-            },
+            list(product_map.values()),
         )
 
-        await products_repo.upsert(
-            org_id,
-            row["product_id"],
-            {
-                "category":
-                    row["category"],
-
-                "is_active":
-                    True,
-            },
-        )
+    # For standard format only: register stores if store_id exists
+    if not is_retail_dataset:
+        store_ids = {
+            row["store_id"]
+            for row in new_records
+            if row.get("store_id")
+        }
+        for sid in store_ids:
+            await stores_repo.upsert(
+                org_id,
+                sid,
+                {"is_active": True},
+            )
 
     await imports_repo.mark_rows_imported(
         org_id,
@@ -765,10 +775,18 @@ async def upload_sales_csv(
             org_id
         )
 
+        import asyncio
+
+        asyncio.create_task(
+            ai_predictor.train_model(
+                org_id
+            )
+        )
+
     except Exception:
 
         log.exception(
-            "ML cache invalidation failed"
+            "ML cache invalidation or training trigger failed"
         )
 
     # ========================================================
@@ -1320,6 +1338,8 @@ async def get_dashboard_summary(
                 )
             )
         )
+    if history_chart and history_chart[-1].get("actual") is not None:
+        history_chart[-1]["forecast"] = history_chart[-1]["actual"]
 
     for (
         date_key,
@@ -1519,7 +1539,7 @@ async def get_dashboard_summary(
                 ),
 
             "active_stores":
-                active_stores,
+                None if real_mode else active_stores,
 
             "active_products":
                 active_products,
@@ -1686,13 +1706,13 @@ async def get_sales_history(
         "filters": {
 
             "stores":
-                sorted(stores),
+                sorted([s for s in stores if s]),
 
             "products":
-                sorted(products),
+                sorted([p for p in products if p]),
 
             "categories":
-                sorted(categories),
+                sorted([c for c in categories if c]),
         },
     }
 

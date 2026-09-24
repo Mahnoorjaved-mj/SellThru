@@ -4,10 +4,7 @@ import {
   LayoutDashboard,
   Database,
   Package,
-  Store as StoreIcon,
-  BrainCircuit,
   Target,
-  FlaskConical,
   FileSpreadsheet,
   Bell,
   TrendingUp,
@@ -26,14 +23,11 @@ const GROUPS = [
     items: [
       { to: '/data', label: 'Transactions', icon: Database, end: true },
       { to: '/data/products', label: 'Products', icon: Package },
-      { to: '/data/stores', label: 'Stores', icon: StoreIcon },
     ],
   },
   {
     label: 'Forecasting',
     items: [
-      { to: '/predictions', label: 'AI Predictions', icon: BrainCircuit },
-      { to: '/scenarios', label: 'Scenarios', icon: FlaskConical },
       { to: '/accuracy', label: 'Accuracy', icon: Target },
     ],
   },

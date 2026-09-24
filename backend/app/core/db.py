@@ -15,7 +15,7 @@ def connect() -> AsyncIOMotorDatabase:
     """Create the Motor client (idempotent) and return the database handle."""
     global _client, _db
     if _db is None:
-        _client = AsyncIOMotorClient(settings.MONGO_URI, serverSelectionTimeoutMS=3000)
+        _client = AsyncIOMotorClient(settings.MONGO_URI, serverSelectionTimeoutMS=15000)
         _db = _client[settings.MONGO_DB_NAME]
         log.info("Connected to MongoDB db=%s", settings.MONGO_DB_NAME)
     return _db

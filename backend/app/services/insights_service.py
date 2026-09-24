@@ -40,6 +40,10 @@ async def get_anomalies(org_id: str, sensitivity: str = "medium") -> dict:
 
     df = pd.DataFrame(data)
     df["date"] = pd.to_datetime(df["date"])
+    if "store_id" not in df.columns:
+        df["store_id"] = ""
+    else:
+        df["store_id"] = df["store_id"].fillna("")
 
     anomalies_by_key: dict[str, dict] = {}
 
@@ -93,7 +97,7 @@ async def get_anomalies(org_id: str, sensitivity: str = "medium") -> dict:
 
             anomalies_by_key[key] = {
                 "date": date_iso,
-                "store_id": store,
+                "store_id": store if store else "Omnichannel / Direct",
                 "product_id": prod,
                 "category": row["category"],
                 "quantity": int(val),
@@ -176,19 +180,39 @@ async def get_trends(org_id: str) -> dict:
             "type": "promo"
         })
 
-    # 3. Top Store Contribution
-    store_revs = df.groupby("store_id")["revenue"].sum()
-    if not store_revs.empty:
-        top_store = store_revs.idxmax()
-        top_rev = store_revs.max()
-        total_rev = store_revs.sum()
-        share = (top_rev / total_rev) * 100
+    # 3. Top Revenue Driver (Store if real stores exist, otherwise Top Category)
+    has_real_stores = (
+        "store_id" in df.columns
+        and df["store_id"].notna().any()
+        and (df["store_id"] != "").any()
+        and (df["store_id"] != "ONLINE").any()
+    )
 
-        trends.append({
-            "title": f"Top Revenue Driver: {top_store}",
-            "description": f"Store {top_store} contributes {share:.1f}% of total business revenue over the last 90 days (${top_rev:,.2f}).",
-            "type": "store"
-        })
+    if has_real_stores:
+        valid_stores = df[df["store_id"].notna() & (df["store_id"] != "") & (df["store_id"] != "ONLINE")]
+        store_revs = valid_stores.groupby("store_id")["revenue"].sum()
+        if not store_revs.empty:
+            top_store = store_revs.idxmax()
+            top_rev = float(store_revs.max())
+            total_rev = float(valid_stores["revenue"].sum())
+            share = (top_rev / (total_rev + 1e-8)) * 100
+            trends.append({
+                "title": f"Top Revenue Store: {top_store}",
+                "description": f"Store {top_store} contributes {share:.1f}% of total business revenue (${top_rev:,.2f}).",
+                "type": "store"
+            })
+    else:
+        cat_revs = df.groupby("category")["revenue"].sum()
+        if not cat_revs.empty:
+            top_cat = cat_revs.idxmax()
+            top_rev = float(cat_revs.max())
+            total_rev = float(df["revenue"].sum())
+            share = (top_rev / (total_rev + 1e-8)) * 100
+            trends.append({
+                "title": f"Top Category Driver: {top_cat}",
+                "description": f"Category '{top_cat}' is the primary revenue driver, contributing {share:.1f}% of business revenue (${top_rev:,.2f}).",
+                "type": "trend"
+            })
 
     # 4. Inventory Alert based on predictions (stock depleting soon)
     from app.ml.predictor import ai_predictor
@@ -196,15 +220,30 @@ async def get_trends(org_id: str) -> dict:
         preds = await ai_predictor.predict(org_id, horizon_days=7)
         if preds:
             pred_df = pd.DataFrame(preds)
-            summed_forecast = pred_df.groupby(["store_id", "product_id"])["quantity"].sum().reset_index()
-            top_depletions = summed_forecast.sort_values("quantity", ascending=False).head(3)
-
-            for _, row in top_depletions.iterrows():
-                trends.append({
-                    "title": f"Stock Alert: {row['product_id']} at {row['store_id']}",
-                    "description": f"High demand expected! Forecast predicts {int(row['quantity'])} units of {row['product_id']} will be sold at {row['store_id']} over the next 7 days.",
-                    "type": "alert"
-                })
+            has_pred_stores = (
+                "store_id" in pred_df.columns
+                and pred_df["store_id"].notna().any()
+                and (pred_df["store_id"] != "ONLINE").any()
+                and (pred_df["store_id"] != "").any()
+            )
+            if has_pred_stores:
+                summed_forecast = pred_df.groupby(["store_id", "product_id"])["quantity"].sum().reset_index()
+                top_depletions = summed_forecast.sort_values("quantity", ascending=False).head(3)
+                for _, row in top_depletions.iterrows():
+                    trends.append({
+                        "title": f"Stock Alert: {row['product_id']} at {row['store_id']}",
+                        "description": f"High demand expected! Forecast predicts {int(row['quantity'])} units of {row['product_id']} will be sold at {row['store_id']} over the next 7 days.",
+                        "type": "alert"
+                    })
+            else:
+                summed_forecast = pred_df.groupby("product_id")["quantity"].sum().reset_index()
+                top_depletions = summed_forecast.sort_values("quantity", ascending=False).head(3)
+                for _, row in top_depletions.iterrows():
+                    trends.append({
+                        "title": f"Demand Velocity: SKU {row['product_id']}",
+                        "description": f"High demand expected! AI forecast predicts {int(row['quantity'])} units of {row['product_id']} will be demanded over the next 7 days.",
+                        "type": "alert"
+                    })
     except Exception:
         pass
 

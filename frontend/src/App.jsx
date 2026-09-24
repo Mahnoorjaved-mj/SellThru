@@ -5,10 +5,7 @@ import ProtectedRoute from './components/ProtectedRoute'
 import Dashboard from './pages/Dashboard'
 import DataManagement from './pages/DataManagement'
 import Products from './pages/Products'
-import Stores from './pages/Stores'
-import Predictions from './pages/Predictions'
 import Accuracy from './pages/Accuracy'
-import Scenarios from './pages/Scenarios'
 import Insights from './pages/Insights'
 import Alerts from './pages/Alerts'
 import Settings from './pages/Settings'
@@ -50,34 +47,10 @@ export default function App() {
           }
         />
         <Route
-          path="/data/stores"
-          element={
-            <ProtectedRoute>
-              <Stores />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/predictions"
-          element={
-            <ProtectedRoute>
-              <Predictions />
-            </ProtectedRoute>
-          }
-        />
-        <Route
           path="/accuracy"
           element={
             <ProtectedRoute>
               <Accuracy />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/scenarios"
-          element={
-            <ProtectedRoute>
-              <Scenarios />
             </ProtectedRoute>
           }
         />

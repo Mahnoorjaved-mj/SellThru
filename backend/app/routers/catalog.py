@@ -1,7 +1,8 @@
 """Products & stores master-data router. Mounted at /api/catalog (legacy) and /api/v1/catalog (canonical)."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from typing import Optional
+from fastapi import APIRouter, Depends, Query
 
 from app.services import catalog_service as ctrl
 from app.schemas.catalog import ProductUpdate, StoreUpdate
@@ -11,8 +12,13 @@ router = APIRouter(prefix="/catalog", tags=["catalog"])
 
 
 @router.get("/products")
-async def list_products(user: dict = Depends(get_current_user)):
-    return await ctrl.list_products(user["org_id"])
+async def list_products(
+    page: Optional[int] = Query(None, ge=1),
+    limit: Optional[int] = Query(None, ge=1, le=200),
+    search: Optional[str] = None,
+    user: dict = Depends(get_current_user)
+):
+    return await ctrl.list_products(user["org_id"], page=page, limit=limit, search=search)
 
 
 @router.patch("/products/{product_oid}")
