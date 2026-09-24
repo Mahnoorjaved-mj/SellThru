@@ -43,7 +43,7 @@
   }
   .ss-btn {
     @apply inline-flex items-center justify-center gap-2 rounded-control px-4 py-2 text-sm font-semibold
-      bg-accent text-white shadow-xs transition-all duration-120 ease-out hover:bg-accent-hover hover:shadow-sm
+      bg-accent text-white shadow-sm transition-all duration-120 ease-out hover:bg-accent-hover
       active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed;
   }
   .ss-btn-ghost {
@@ -53,7 +53,7 @@
   }
   .ss-btn-danger {
     @apply inline-flex items-center justify-center gap-2 rounded-control px-4 py-2 text-sm font-medium
-      bg-down text-white shadow-xs transition-all duration-120 ease-out hover:opacity-90 active:scale-[0.99]
+      bg-down text-white shadow-sm transition-all duration-120 ease-out hover:opacity-90 active:scale-[0.99]
       disabled:opacity-50 disabled:cursor-not-allowed;
   }
   .ss-input {

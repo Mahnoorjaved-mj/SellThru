@@ -67,8 +67,8 @@ ChartJS.register(
 
 const CACHE_VERSION = 'real-data-v1'
 
-const ACTUAL_COLOR = '#465C59'
-const FORECAST_COLOR = '#CFA12C'
+const ACTUAL_COLOR = '#0f4c5c'
+const FORECAST_COLOR = '#fa5f38'
 
 function dashboardCacheKey(user, days) {
   const scope =
