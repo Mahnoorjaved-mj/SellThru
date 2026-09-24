@@ -1,71 +1,98 @@
-/* Design tokens — see build brief Section 3.3. Light is the default theme;
-   `.dark` on <html> overrides. Never hardcode a colour outside this file. */
+/* Design tokens — Modern UI Theme with requested color palette:
+   1. Deep Teal: #0F4C5C
+   2. Emerald Green: #059669
+   3. Light Aqua: #E0F7F6
+   4. Coral Orange: #FA5F38
+   5. White: #FFFFFF
+   6. Light Gray: #F8FAFC
+   7. Dark Gray: #1E293B
+   8. Soft Green: #D1FAE5
+   9. Pale Blue: #E0F2FE
+   10. Medium Gray: #64748B
+*/
 
 :root {
-  --color-bg: #fdfcfa;
-  --color-bg-muted: #fdfcfa; /* Background: #FDFCFA */
-  --color-surface: #e2eded; /* Cards/Surfaces: #E2EDED */
-  --color-surface-hover: #bed0ce; /* Secondary surfaces: #BED0CE */
-  --color-border: #bed0ce; /* Secondary surfaces: #BED0CE */
-  --color-border-strong: #96ada9; /* inputs, dividers */
-  --color-text: #465c59; /* Primary text/buttons/icons: #465C59 */
-  --color-text-secondary: #5c7672;
-  --color-text-tertiary: #7d9793; /* labels, units, axis ticks */
-  --color-accent: #465c59; /* Primary buttons / controls: #465C59 */
-  --color-accent-hover: #364946;
-  --color-accent-soft: #bed0ce; /* selected row, active nav */
-  --color-highlight: #cfa12c; /* Accent/highlights: #CFA12C */
-  --color-positive: #2e7d32;
-  --color-negative: #c62828;
-  --color-warning: #cfa12c;
-  --color-overlay: rgba(70, 92, 89, 0.45);
+  /* Requested Color Palette Constants */
+  --deep-teal: #0f4c5c;
+  --emerald-green: #059669;
+  --light-aqua: #e0f7f6;
+  --coral-orange: #fa5f38;
+  --white: #ffffff;
+  --light-gray: #f8fafc;
+  --dark-gray: #1e293b;
+  --soft-green: #d1fae5;
+  --pale-blue: #e0f2fe;
+  --medium-gray: #64748b;
 
-  /* Badge/pill backgrounds: semantic colour tinted */
-  --color-positive-soft: rgba(46, 125, 50, 0.12);
-  --color-negative-soft: rgba(198, 40, 40, 0.12);
-  --color-warning-soft: rgba(207, 161, 44, 0.15);
+  /* App Semantic Colors */
+  --color-bg: #ffffff;
+  --color-bg-muted: var(--light-gray);
+  --color-surface: var(--white);
+  --color-surface-hover: var(--light-aqua);
+  --color-border: #e2e8f0;
+  --color-border-strong: #cbd5e1;
+  --color-text: var(--dark-gray);
+  --color-text-secondary: var(--medium-gray);
+  --color-text-tertiary: #94a3b8;
 
-  /* Chart series */
-  --chart-series-1: #465c59; /* Actual Sales: #465C59 */
-  --chart-series-2: #cfa12c; /* AI Forecast highlight: #CFA12C */
-  --chart-series-3: #5c7672;
-  --chart-series-4: #87a39f;
-  --chart-series-5: #bed0ce;
+  /* Brand Accents */
+  --color-accent: var(--deep-teal);
+  --color-accent-hover: #0a3b40;
+  --color-accent-soft: var(--light-aqua);
+  --color-highlight: var(--coral-orange);
 
-  --radius-control: 4px; /* inputs, buttons, badges */
-  --radius-panel: 6px; /* panels, cards */
+  /* Status Colors */
+  --color-positive: var(--emerald-green);
+  --color-positive-soft: var(--soft-green);
+  --color-negative: var(--coral-orange);
+  --color-negative-soft: rgba(250, 95, 56, 0.14);
+  --color-warning: var(--coral-orange);
+  --color-warning-soft: rgba(250, 95, 56, 0.14);
+  --color-overlay: rgba(15, 76, 92, 0.4);
 
-  --shadow-elevated: 0 8px 24px rgba(70, 92, 89, 0.10); /* dropdowns, modals, toasts only */
+  /* Chart Series */
+  --chart-series-1: var(--deep-teal);     /* Deep Teal (Actual) */
+  --chart-series-2: var(--coral-orange);  /* Coral Orange (Forecast / AI) */
+  --chart-series-3: var(--emerald-green); /* Emerald Green */
+  --chart-series-4: #0284c7;              /* Blue / Pale Blue accent */
+  --chart-series-5: var(--medium-gray);   /* Medium Gray */
+
+  --radius-control: 6px;
+  --radius-panel: 10px;
+
+  --shadow-elevated: 0 10px 25px -5px rgba(15, 76, 92, 0.12), 0 8px 10px -6px rgba(15, 76, 92, 0.05);
 }
 
 .dark {
-  --color-bg: #1c2725;
-  --color-bg-muted: #1c2725;
-  --color-surface: #263634;
-  --color-surface-hover: #334946;
-  --color-border: #334946;
-  --color-border-strong: #465c59;
-  --color-text: #fdfcfa;
-  --color-text-secondary: #bed0ce;
-  --color-text-tertiary: #87a39f;
-  --color-accent: #cfa12c;
-  --color-accent-hover: #e0b43d;
-  --color-accent-soft: rgba(207, 161, 44, 0.16);
-  --color-highlight: #cfa12c;
-  --color-positive: #4ade80;
-  --color-negative: #f87171;
-  --color-warning: #cfa12c;
-  --color-overlay: rgba(0, 0, 0, 0.7);
+  /* Polished Deep Teal Dark Mode */
+  --color-bg: #091c22;
+  --color-bg-muted: #0d252d;
+  --color-surface: #122f39;
+  --color-surface-hover: #193e4a;
+  --color-border: #1e4b59;
+  --color-border-strong: #2c6374;
+  --color-text: #ffffff;
+  --color-text-secondary: #94a3b8;
+  --color-text-tertiary: #64748b;
 
-  --color-positive-soft: rgba(74, 222, 128, 0.16);
-  --color-negative-soft: rgba(248, 113, 113, 0.16);
-  --color-warning-soft: rgba(207, 161, 44, 0.16);
+  --color-accent: #10b981; /* Emerald Green */
+  --color-accent-hover: #34d399;
+  --color-accent-soft: rgba(16, 185, 129, 0.18);
 
-  --chart-series-1: #fdfcfa;
-  --chart-series-2: #cfa12c;
-  --chart-series-3: #bed0ce;
-  --chart-series-4: #87a39f;
-  --chart-series-5: #465c59;
+  --color-highlight: var(--coral-orange);
+  --color-positive: #10b981;
+  --color-positive-soft: rgba(16, 185, 129, 0.2);
+  --color-negative: var(--coral-orange);
+  --color-negative-soft: rgba(250, 95, 56, 0.2);
+  --color-warning: var(--coral-orange);
+  --color-warning-soft: rgba(250, 95, 56, 0.2);
+  --color-overlay: rgba(0, 0, 0, 0.75);
 
-  --shadow-elevated: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --chart-series-1: #ffffff;
+  --chart-series-2: var(--coral-orange);
+  --chart-series-3: #10b981;
+  --chart-series-4: #38bdf8;
+  --chart-series-5: #94a3b8;
+
+  --shadow-elevated: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
 }

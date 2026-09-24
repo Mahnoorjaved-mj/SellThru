@@ -11,7 +11,7 @@
       (function () {
         try {
           var stored = localStorage.getItem('fiq-theme') // 'light' | 'dark' | 'system'
-          var mode = stored || 'system'
+          var mode = stored || 'light'
           var resolved =
             mode === 'system'
               ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')

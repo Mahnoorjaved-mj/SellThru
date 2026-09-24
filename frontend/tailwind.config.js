@@ -24,6 +24,18 @@ export default {
         warn: 'var(--color-warning)',
         'warn-soft': 'var(--color-warning-soft)',
         overlay: 'var(--color-overlay)',
+
+        // Explicit 10 requested colors
+        'deep-teal': '#0f4c5c',
+        'emerald-green': '#059669',
+        'light-aqua': '#e0f7f6',
+        'coral-orange': '#fa5f38',
+        'brand-white': '#ffffff',
+        'light-gray': '#f8fafc',
+        'dark-gray': '#1e293b',
+        'soft-green': '#d1fae5',
+        'pale-blue': '#e0f2fe',
+        'medium-gray': '#64748b',
       },
       borderRadius: {
         DEFAULT: 'var(--radius-control)',
@@ -33,6 +45,8 @@ export default {
       },
       boxShadow: {
         elevated: 'var(--shadow-elevated)',
+        card: '0 1px 3px 0 rgba(15, 76, 92, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.03)',
+        'card-hover': '0 4px 12px -2px rgba(15, 76, 92, 0.08), 0 2px 6px -2px rgba(15, 76, 92, 0.04)',
       },
       fontFamily: {
         body: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],

@@ -24,7 +24,7 @@ function applyResolvedTheme(resolved) {
  * no flash of the wrong theme before React mounts.
  */
 export function ThemeProvider({ children }) {
-  const [mode, setMode] = useState(() => localStorage.getItem(STORAGE_KEY) || 'system')
+  const [mode, setMode] = useState(() => localStorage.getItem(STORAGE_KEY) || 'light')
   const [resolved, setResolved] = useState(() => resolve(mode))
 
   useEffect(() => {
