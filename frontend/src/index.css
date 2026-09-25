@@ -64,30 +64,30 @@
     @apply text-eyebrow font-semibold uppercase text-tertiary tracking-wider;
   }
   .ss-card {
-    @apply bg-surface border border-line/80 rounded-panel shadow-card transition-all duration-200 hover:shadow-card-hover hover:border-line;
+    @apply bg-surface border border-line rounded-panel shadow-card transition-all duration-200 hover:shadow-card-hover hover:border-line-strong;
   }
   .ss-card-interactive {
-    @apply bg-surface border border-line/80 rounded-panel shadow-card transition-all duration-200 hover:shadow-card-hover hover:-translate-y-0.5 hover:border-accent/40 cursor-pointer;
+    @apply bg-surface border border-line rounded-panel shadow-card transition-all duration-200 hover:shadow-card-hover hover:-translate-y-0.5 hover:border-accent cursor-pointer;
   }
   .ss-btn {
     @apply inline-flex items-center justify-center gap-2 rounded-control px-4 py-2 text-sm font-semibold
-      bg-gradient-to-b from-deep-teal to-[#093844] text-white shadow-sm ring-1 ring-black/5 transition-all duration-150 ease-out
-      hover:from-[#115769] hover:to-deep-teal hover:shadow active:scale-[0.98] active:shadow-inner
+      bg-accent text-white shadow-sm transition-all duration-150 ease-out
+      hover:bg-accent-hover hover:shadow active:scale-[0.98]
       disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none;
   }
   .ss-btn-ghost {
     @apply inline-flex items-center justify-center gap-2 rounded-control px-3 py-2 text-sm font-medium
-      bg-transparent text-secondary border border-line/70 transition-all duration-150 ease-out hover:bg-surface-hover
-      hover:text-primary hover:border-line active:scale-[0.98];
+      bg-transparent text-secondary border border-line transition-all duration-150 ease-out hover:bg-surface-hover
+      hover:text-primary active:scale-[0.98];
   }
   .ss-btn-danger {
     @apply inline-flex items-center justify-center gap-2 rounded-control px-4 py-2 text-sm font-medium
-      bg-gradient-to-b from-coral-orange to-[#e04f2a] text-white shadow-sm transition-all duration-150 ease-out
+      bg-down text-white shadow-sm transition-all duration-150 ease-out
       hover:brightness-105 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed;
   }
   .ss-input {
-    @apply w-full rounded-control bg-bg border border-line-strong/80 px-3.5 py-2 text-sm text-primary
-      placeholder:text-tertiary outline-none focus:border-accent focus:ring-2 focus:ring-accent/15
+    @apply w-full rounded-control bg-bg border border-line-strong px-3.5 py-2 text-sm text-primary
+      placeholder:text-tertiary outline-none focus:border-accent focus:ring-1 focus:ring-accent
       shadow-xs transition-all duration-150 ease-out;
   }
   .ss-label {
@@ -97,14 +97,14 @@
     @apply w-full text-cell border-collapse;
   }
   .ss-table th {
-    @apply text-left text-eyebrow font-semibold text-tertiary px-4 py-3 border-b border-line bg-app/80 backdrop-blur-xs sticky top-0 uppercase tracking-wider;
+    @apply text-left text-eyebrow font-semibold text-tertiary px-4 py-3 border-b border-line bg-app sticky top-0 uppercase tracking-wider;
   }
   .ss-table td {
-    @apply px-4 py-3 border-b border-line/60 text-primary transition-colors;
+    @apply px-4 py-3 border-b border-line text-primary transition-colors;
     height: 42px;
   }
   .ss-table tbody tr {
-    @apply transition-colors duration-120 ease-out hover:bg-light-aqua/30 dark:hover:bg-teal-950/20;
+    @apply transition-colors duration-120 ease-out hover:bg-surface-hover;
   }
   .ss-badge {
     @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold tracking-wide transition-all;
