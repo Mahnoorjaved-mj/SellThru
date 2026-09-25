@@ -114,6 +114,17 @@ app.include_router(alerts.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
 
 
+@app.get("/")
+async def root():
+    return {
+        "status": "online",
+        "app": settings.APP_NAME,
+        "version": settings.APP_VERSION,
+        "docs": "/docs",
+        "health": "/healthz",
+    }
+
+
 @app.get("/api/health", deprecated=True)
 async def legacy_health():
     """Deprecated alias of /readyz, kept for existing tooling."""
