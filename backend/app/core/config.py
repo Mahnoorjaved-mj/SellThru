@@ -24,10 +24,10 @@ class Settings(BaseSettings):
 
     # ---- MongoDB ----
     MONGO_URI: str = "mongodb://localhost:27017"
-    MONGO_DB_NAME: str = "sales_forecasting"
+    MONGO_DB_NAME: str = "SalesForecasting"
 
     # ---- JWT auth ----
-    JWT_SECRET: str = INSECURE_DEFAULT_JWT_SECRET
+    JWT_SECRET: str = "super-secret-key-change-in-production-123456"
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_HOURS: int = 4
 
