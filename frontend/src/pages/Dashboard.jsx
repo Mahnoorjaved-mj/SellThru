@@ -8,6 +8,9 @@ import {
   Store,
   Users,
   Sparkles,
+  TrendingUp,
+  DollarSign,
+  Activity,
 } from 'lucide-react'
 
 import { Line } from 'react-chartjs-2'
@@ -559,276 +562,160 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       {/* HEADER & SOURCE INDICATOR */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-primary">Executive Dashboard</h1>
-          <p className="text-xs text-secondary mt-0.5">Real-time demand forecasting and retail metrics</p>
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-2xl font-bold tracking-tight text-primary">Executive Dashboard</h1>
+            <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-light-aqua px-2.5 py-0.5 text-xs font-semibold text-deep-teal dark:bg-emerald-950/80 dark:text-emerald-300">
+              <Activity size={12} className="text-emerald-500" /> Realtime
+            </span>
+          </div>
+          <p className="text-xs text-secondary mt-1">Multi-store demand forecasting and predictive retail intelligence</p>
         </div>
-        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold uppercase tracking-wider ${isRealData ? 'bg-soft-green text-emerald-green border border-emerald-green/30 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800' : 'bg-pale-blue text-deep-teal border border-deep-teal/20 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'}`}>
-          <span className={`h-1.5 w-1.5 rounded-full ${isRealData ? 'bg-emerald-green' : 'bg-deep-teal'}`} />
-          {isRealData ? 'REAL DATA' : 'DEMO DATA'}
-        </span>
+        <div className="flex items-center gap-3">
+          <span
+            className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider shadow-xs ${
+              isRealData
+                ? 'bg-soft-green text-emerald-green border border-emerald-500/25 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800'
+                : 'bg-pale-blue text-deep-teal border border-deep-teal/20 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
+            }`}
+          >
+            <span
+              className={`h-2 w-2 rounded-full ${
+                isRealData ? 'bg-emerald-green animate-pulse' : 'bg-deep-teal'
+              }`}
+            />
+            {isRealData ? 'LIVE PRODUCTION DATA' : 'DEMO BENCHMARK DATA'}
+          </span>
+        </div>
       </div>
 
       {/* =====================================================
-          KPI STRIP
+          KPI STRIP — 5 MODERN INTERACTIVE CARDS
           ===================================================== */}
 
-      <Panel
-        className="
-          grid
-          grid-cols-1
-          sm:grid-cols-2
-          lg:grid-cols-5
-          divide-y
-          sm:divide-y-0
-          sm:divide-x
-          divide-line
-        "
-      >
-
-        {/* NET SALES */}
-
-        <div className="p-4">
-
-          <p className="ss-eyebrow">
-            Net sales ({days}d)
-          </p>
-
-          <h3
-            className="
-              text-kpi
-              font-semibold
-              text-primary
-              font-mono
-              tabular-nums
-              mt-1
-            "
-          >
-            {formatCurrency(
-              kpis.total_sales
-            )}
-          </h3>
-
-          <div
-            className="
-              flex
-              items-center
-              justify-between
-              mt-1.5
-            "
-          >
-
-            <span
-              className="
-                text-[11px]
-                text-secondary
-                font-mono
-                tabular-nums
-              "
-            >
-              Avg daily:{' '}
-              {formatCurrency(
-                kpis.avg_daily_sales
-              )}
-            </span>
-
-            <Sparkline
-              data={netSalesSpark}
-              color={ACTUAL_COLOR}
-            />
-
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        {/* CARD 1: NET SALES */}
+        <div className="ss-card p-4.5 flex flex-col justify-between hover:-translate-y-0.5 transition-all duration-200">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="ss-eyebrow">Net Sales ({days}d)</span>
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-light-aqua text-deep-teal dark:bg-emerald-950 dark:text-emerald-300">
+                <DollarSign size={14} />
+              </div>
+            </div>
+            <h3 className="text-2xl font-bold text-primary font-mono tabular-nums mt-2 tracking-tight">
+              {formatCurrency(kpis.total_sales)}
+            </h3>
           </div>
-
-        </div>
-
-        {/* AI FORECAST */}
-
-        <div className="p-4">
-
-          <p className="ss-eyebrow">
-            AI forecast (next {days}d)
-          </p>
-
-          <h3
-            className="
-              text-kpi
-              font-semibold
-              text-primary
-              font-mono
-              tabular-nums
-              mt-1
-            "
-          >
-            {formatCurrency(
-              kpis.forecast_sales_30d
-            )}
-          </h3>
-
-          <div
-            className="
-              flex
-              items-center
-              justify-between
-              mt-1.5
-            "
-          >
-
-            <span
-              className={`
-                inline-flex
-                items-center
-                gap-0.5
-                font-mono
-                tabular-nums
-                text-[11px]
-                font-semibold
-                ${
-                  kpis.variance_pct >= 0
-                    ? 'text-up'
-                    : 'text-down'
-                }
-              `}
-            >
-
-              {kpis.variance_pct >= 0 ? (
-                <ArrowUpRight
-                  size={12}
-                />
-              ) : (
-                <ArrowDownRight
-                  size={12}
-                />
-              )}
-
-              {Math.abs(
-                kpis.variance_pct
-              ).toFixed(1)}
-              %
-
+          <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-line/50">
+            <span className="text-[11px] text-secondary font-mono tabular-nums">
+              Avg daily: {formatCurrency(kpis.avg_daily_sales)}
             </span>
-
-            <Sparkline
-              data={forecastSpark}
-              color={
-                FORECAST_COLOR
-              }
-            />
-
+            <Sparkline data={netSalesSpark} color={ACTUAL_COLOR} />
           </div>
-
         </div>
 
-        {/* CUSTOMERS / STORES */}
-
-        <div
-          className="
-            p-4
-            flex
-            flex-col
-            justify-between
-          "
-        >
-
-          <p
-            className="
-              ss-eyebrow
-              flex
-              items-center
-              gap-1.5
-            "
-          >
-            {isRealData ? <Users size={13} /> : <Store size={13} />}
-
-            {isRealData
-              ? 'Active customers'
-              : 'Active stores'}
-          </p>
-
-          <h4
-            className="
-              text-section
-              font-semibold
-              text-primary
-              font-mono
-              tabular-nums
-              mt-2
-            "
-          >
-            {isRealData
-              ? kpis.active_customers
-              : kpis.active_stores}
-          </h4>
-
+        {/* CARD 2: AI FORECAST */}
+        <div className="ss-card p-4.5 flex flex-col justify-between hover:-translate-y-0.5 transition-all duration-200">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="ss-eyebrow">AI Forecast ({days}d)</span>
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-coral-orange/15 text-coral-orange">
+                <Sparkles size={14} />
+              </div>
+            </div>
+            <h3 className="text-2xl font-bold text-primary font-mono tabular-nums mt-2 tracking-tight">
+              {formatCurrency(kpis.forecast_sales_30d)}
+            </h3>
+          </div>
+          <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-line/50">
+            <span
+              className={`inline-flex items-center gap-1 font-mono tabular-nums text-xs font-bold rounded-md px-1.5 py-0.5 ${
+                kpis.variance_pct >= 0
+                  ? 'bg-soft-green text-emerald-green dark:bg-emerald-950/60 dark:text-emerald-300'
+                  : 'bg-coral-orange/15 text-coral-orange'
+              }`}
+            >
+              {kpis.variance_pct >= 0 ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}
+              {Math.abs(kpis.variance_pct).toFixed(1)}%
+            </span>
+            <Sparkline data={forecastSpark} color={FORECAST_COLOR} />
+          </div>
         </div>
 
-        {/* PRODUCTS */}
-
-        <div
-          className="
-            p-4
-            flex
-            flex-col
-            justify-between
-          "
-        >
-
-          <p
-            className="
-              ss-eyebrow
-              flex
-              items-center
-              gap-1.5
-            "
-          >
-            <ShoppingBag
-              size={13}
-            />
-
-            Active products
-          </p>
-
-          <h4
-            className="
-              text-section
-              font-semibold
-              text-primary
-              font-mono
-              tabular-nums
-              mt-2
-            "
-          >
-            {kpis.active_products}
-          </h4>
-
+        {/* CARD 3: ACTIVE NETWORK */}
+        <div className="ss-card p-4.5 flex flex-col justify-between hover:-translate-y-0.5 transition-all duration-200">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="ss-eyebrow">{isRealData ? 'Active Customers' : 'Active Stores'}</span>
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-pale-blue text-deep-teal dark:bg-sky-950 dark:text-sky-300">
+                {isRealData ? <Users size={14} /> : <Store size={14} />}
+              </div>
+            </div>
+            <h3 className="text-2xl font-bold text-primary font-mono tabular-nums mt-2 tracking-tight">
+              {isRealData ? kpis.active_customers : kpis.active_stores}
+            </h3>
+          </div>
+          <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-line/50">
+            <span className="text-[11px] text-secondary">
+              {isRealData ? 'Verified buyers' : 'Retail locations'}
+            </span>
+            <span className="inline-flex h-2 w-2 rounded-full bg-emerald-green" />
+          </div>
         </div>
 
-        {/* PREDICTIONS */}
-
-        <div
-          className="
-            p-4
-            flex
-            items-center
-          "
-        >
-
-          <Link
-            to="/insights"
-            className="
-              text-xs
-              text-slate-700
-              hover:text-slate-900
-              hover:underline
-              font-semibold
-            "
-          >
-            Detailed AI insights →
-          </Link>
-
+        {/* CARD 4: PRODUCTS */}
+        <div className="ss-card p-4.5 flex flex-col justify-between hover:-translate-y-0.5 transition-all duration-200">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="ss-eyebrow">Active Catalog</span>
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-soft-green text-emerald-green dark:bg-emerald-950 dark:text-emerald-300">
+                <ShoppingBag size={14} />
+              </div>
+            </div>
+            <h3 className="text-2xl font-bold text-primary font-mono tabular-nums mt-2 tracking-tight">
+              {kpis.active_products}
+            </h3>
+          </div>
+          <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-line/50">
+            <span className="text-[11px] text-secondary">Predicted SKU items</span>
+            <span className="text-[10px] font-semibold text-deep-teal bg-light-aqua px-1.5 py-0.5 rounded dark:bg-emerald-950 dark:text-emerald-300">
+              100% Tracked
+            </span>
+          </div>
         </div>
 
-      </Panel>
+        {/* CARD 5: PREDICTIVE INSIGHTS HERO CARD */}
+        <div className="rounded-2xl border border-deep-teal/20 bg-gradient-to-br from-deep-teal via-[#093844] to-[#041d24] p-4.5 text-white shadow-card hover:shadow-card-hover transition-all duration-200 hover:-translate-y-0.5 flex flex-col justify-between relative overflow-hidden group">
+          <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-emerald-400/10 blur-xl group-hover:bg-emerald-400/20 transition-all" />
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-300">
+                AI Engine
+              </span>
+              <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-white/10 text-emerald-300">
+                <Sparkles size={12} />
+              </span>
+            </div>
+            <h4 className="text-base font-bold tracking-tight text-white mt-2">
+              Predictive Insights
+            </h4>
+            <p className="text-[11px] text-white/70 mt-0.5 line-clamp-2">
+              Anomaly detection & auto-retrained demand trends.
+            </p>
+          </div>
+          <div className="mt-3 pt-2.5 border-t border-white/10 flex items-center justify-between">
+            <Link
+              to="/insights"
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-300 hover:text-white transition-colors"
+            >
+              <span>Explore Insights</span>
+              <ArrowUpRight size={13} />
+            </Link>
+          </div>
+        </div>
+      </div>
 
       {/* =====================================================
           SALES OVERVIEW

@@ -5,18 +5,20 @@ const PRESETS = [
   { label: '1Y', days: 365 },
 ]
 
-/** Pill range switcher. Controlled by `days` (number), calls onChange(days). */
+/** Segmented control range switcher. Controlled by `days` (number), calls onChange(days). */
 export function RangeSwitcher({ days, onChange }) {
   return (
-    <div className="inline-flex items-center rounded border border-line bg-bg p-0.5">
+    <div className="inline-flex items-center rounded-xl border border-line/80 bg-app p-1 shadow-xs">
       {PRESETS.map((p) => {
         const active = p.days === days
         return (
           <button
             key={p.days}
             onClick={() => onChange(p.days)}
-            className={`h-6 px-2 rounded-sm text-[11px] font-semibold transition-colors duration-120 ease-out ${
-              active ? 'bg-accent-soft text-accent' : 'text-tertiary hover:text-primary'
+            className={`h-6.5 px-3 rounded-lg text-xs font-semibold transition-all duration-150 ease-out ${
+              active
+                ? 'bg-surface text-deep-teal shadow-sm ring-1 ring-black/5 dark:bg-emerald-950 dark:text-emerald-300 dark:ring-emerald-700/40'
+                : 'text-secondary hover:text-primary hover:bg-surface/50'
             }`}
           >
             {p.label}
