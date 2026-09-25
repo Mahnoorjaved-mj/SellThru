@@ -1,9 +1,13 @@
 """Auth business logic — Mongo + JWT."""
 from __future__ import annotations
 
+import asyncio
 import secrets
 from datetime import datetime, timezone, timedelta
 from fastapi import HTTPException, Request
+import structlog
+
+log = structlog.get_logger("forecastiq.auth")
 
 from app.repositories import otp_repo, organizations_repo, reset_tokens_repo, sessions_repo, twofa_repo, users_repo
 from app.schemas.common import serialize
@@ -91,7 +95,14 @@ async def register(email: str, password: str, name: str | None, request: Request
             "created_at": now,
         }
     )
-    email_service.send_otp(email, code)
+    sent = await asyncio.to_thread(email_service.send_otp, email, code)
+    if not sent:
+        log.error("otp_email_send_failed", email=email)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to send verification email. Please check your email address or try again.",
+        )
+    log.info("otp_dispatched", email=email)
     await log_event("register_otp_sent", request=request, metadata={"email": email})
     return {"status": "success", "message": "OTP sent to your email"}
 
