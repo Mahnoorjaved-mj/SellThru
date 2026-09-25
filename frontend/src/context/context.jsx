@@ -11,7 +11,16 @@ import { ToastViewport } from '../components/ui/Toast'
 const AppContext = createContext(null)
 export const useApp = () => useContext(AppContext)
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
+const rawApiBase = (import.meta.env.VITE_API_BASE_URL || '').trim()
+const DEFAULT_PROD_API = 'https://sellthru.onrender.com'
+const API_BASE = (
+  rawApiBase ||
+  (typeof window !== 'undefined' &&
+  window.location.hostname !== 'localhost' &&
+  window.location.hostname !== '127.0.0.1'
+    ? DEFAULT_PROD_API
+    : '')
+).replace(/\/+$/, '')
 const TOKEN_KEY = 'sf_token'
 const REFRESH_KEY = 'sf_refresh_token'
 const NO_REFRESH_PATHS = new Set(['/auth/login', '/auth/register', '/auth/verify-otp', '/auth/refresh'])
